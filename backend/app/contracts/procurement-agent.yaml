@@ -19,4 +19,4 @@ egress_allowlist:
 - suppliers.approved.example
 may_delegate_to: []
 rate_limit_per_min: 30
-signature: 757d2424c46b79868539a51a5605168fb8d071a98e6b09cefed15fce24f2758a
+signature: 2b9c19841d988807521c86be4b6a6bb391183cd044521741d6bd0ef4874c5735

@@ -15,4 +15,4 @@ may_delegate_to:
 - finance-agent
 - procurement-agent
 rate_limit_per_min: 30
-signature: f3ed3f2aa2529682fe17e50a0898eb4424fe0e390a1269b114ba25da74c0a0e2
+signature: 16e471495060b2c16dd857e5d1b1632882b76b46fa9d50483b83770f5da09ebc

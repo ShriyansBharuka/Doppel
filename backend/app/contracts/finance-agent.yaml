@@ -14,4 +14,4 @@ egress_allowlist:
 - bank.corp.internal
 may_delegate_to: []
 rate_limit_per_min: 30
-signature: be358d05dbe347ae7cd7cf40872a8f3cc63a9b73517ec6f47d5cefb240f03787
+signature: 2658bdcdb9f5bf480a2e195dc0c294bf5cc73c3042fd3c48d45c434cd6d51293
