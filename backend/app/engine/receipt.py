@@ -20,6 +20,18 @@ from app.store import Store
 
 logger = logging.getLogger(__name__)
 
+SHORT_REASONS: dict[str, str] = {
+    "contract": "contract violation",
+    "novelty": "novel tool use",
+    "sequence": "unusual sequence",
+    "taint_flow": "tainted data flow",
+    "decoy": "decoy touched",
+    "drift_cusum": "slow drift",
+    "sigil": "missing/wrong sigil",
+    "token_context": "token context change",
+    "tool_integrity": "tool definition changed",
+}
+
 
 def build_drift_receipt(
     session: SessionState,
@@ -75,8 +87,8 @@ def build_drift_receipt(
                 link_reason="Taint and risk floor inherited via inter-agent delegation",
             )
 
-    # 3. Contributions from highest-risk event
-    highest_risk_event = max(events, key=lambda e: e.risk) if events else None
+    # 3. Contributions from highest-risk event; on a tie the LATEST wins (max() keeps the first it sees)
+    highest_risk_event = max(reversed(events), key=lambda e: e.risk) if events else None
     contributions: list[Contribution] = []
     top_evidence = "Behavioral deviation detected"
     contract_clause = None
@@ -124,6 +136,16 @@ def build_drift_receipt(
     else:
         headline = f"{role} · Risk {session.risk} · {top_evidence} · no untrusted input — consider token theft"
 
+    top_detector = max(contributions, key=lambda c: c.share_pct) if contributions else None
+    if top_detector and top_detector.detector == "decoy" and "exfiltration" in " ".join(top_detector.evidence).lower():
+        reason = "proven exfiltration"
+    else:
+        reason = SHORT_REASONS.get(top_detector.detector, "behaviour drift") if top_detector else "behaviour drift"
+    via = f"via {root_cause.source.rstrip('/').rsplit('/', 1)[-1]}" if root_cause and root_cause.source else "no untrusted input"
+    headline_short = f"{role} · Risk {session.risk} · {reason} · {via}"
+    if len(headline_short) > 90:
+        headline_short = headline_short[:89] + "…"
+
     # 5. Actions taken list
     actions_taken: list[str] = []
     if session.tier != Tier.ALLOW:
@@ -161,6 +183,7 @@ def build_drift_receipt(
         risk=session.risk,
         tier=session.tier,
         headline=headline,
+        headline_short=headline_short,
         contributions=contributions,
         root_cause=root_cause,
         contract_clause=contract_clause,
@@ -187,7 +210,8 @@ def sync_session_alert(
 
     if not existing_alert:
         # Search by session_id in store alerts
-        session_alerts = store.list_alerts(session_id=session.session_id)
+        # Alerts closed by a restore stay closed; a new drift opens a new alert
+        session_alerts = [a for a in store.list_alerts(session_id=session.session_id) if a.status == "open"]
         if session_alerts:
             existing_alert = session_alerts[0]
 

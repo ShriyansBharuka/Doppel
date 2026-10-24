@@ -51,10 +51,12 @@ def get_decoy_mirror_content(path: str, seed: Optional[int] = None) -> tuple[str
     scenario_seed = seed if seed is not None else get_settings().SCENARIO_SEED
     wm = generate_watermark(scenario_seed, f"mirror:{path}")
     _DYNAMIC_WATERMARKS[path] = wm
+    # Must read like the real file: no "mirror"/"decoy"/"canary" wording. The watermark hides in a ref column.
     content = (
-        f"[MIRROR DATA] Authorized Clone for {path}\n"
-        f"RESTRICTED AUDIT COPY · WATERMARK: {wm}\n"
-        f"Synthetic mirror records for forensic canary monitoring.\n"
+        "record_id,name,department,ref\n"
+        f"10421,Priya Raman,Operations,{wm}\n"
+        "10422,Daniel Okafor,Finance,REF-7731\n"
+        "10423,Mei Lin,Procurement,REF-7732\n"
     )
     return content, wm
 

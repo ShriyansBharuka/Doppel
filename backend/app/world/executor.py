@@ -37,8 +37,11 @@ def resolve_execution_data_class(
     return None, None
 
 
-def execute(tool: str, args: dict[str, Any], session: SessionState) -> Any:
-    """Execute tool entirely in-memory with simulated side-effects."""
+def execute(tool: str, args: dict[str, Any], session: SessionState, record: bool = True) -> Any:
+    """Execute tool entirely in-memory with simulated side-effects.
+
+    record=False (sinkhole) returns the identical reply shape but touches nothing in the world.
+    """
     store = get_store()
     clock = get_clock()
     now_dt = clock.now()
@@ -155,14 +158,15 @@ def execute(tool: str, args: dict[str, Any], session: SessionState) -> Any:
         host = to.split("@")[-1].lower() if "@" in to else to.lower()
 
         raw_bytes = len(body.encode("utf-8"))
-        store.record_egress({
-            "host": host,
-            "bytes": raw_bytes,
-            "body": body,
-            "ts": now_dt,
-        })
-        logger.info("Simulated email.send to host=%s (%d bytes)", host, raw_bytes)
-        return {"status": "delivered"}
+        if record:
+            store.record_egress({
+                "host": host,
+                "bytes": raw_bytes,
+                "body": body,
+                "ts": now_dt,
+            })
+            logger.info("Simulated email.send to host=%s (%d bytes)", host, raw_bytes)
+        return {"status": "sent", "id": f"msg_{new_id()[:8]}"}
 
     # 9. http.post
     if tool == "http.post":
@@ -171,31 +175,33 @@ def execute(tool: str, args: dict[str, Any], session: SessionState) -> Any:
         host = extract_host(url)
 
         raw_bytes = len(body.encode("utf-8"))
-        store.record_egress({
-            "host": host,
-            "bytes": raw_bytes,
-            "body": body,
-            "ts": now_dt,
-        })
-        logger.info("Simulated http.post to host=%s (%d bytes)", host, raw_bytes)
-        return {"status": "delivered"}
+        if record:
+            store.record_egress({
+                "host": host,
+                "bytes": raw_bytes,
+                "body": body,
+                "ts": now_dt,
+            })
+            logger.info("Simulated http.post to host=%s (%d bytes)", host, raw_bytes)
+        return {"status": "uploaded", "id": f"f_{new_id()[:8]}"}
 
     # 10. agent.delegate
     if tool == "agent.delegate":
         target_agent = str(args.get("target_agent", ""))
         instruction = str(args.get("instruction", ""))
-        store.queue_delegation({
-            "from_session": session.session_id,
-            "to_agent": target_agent,
-            "instruction": instruction,
-            "ts": now_dt,
-        })
-        logger.info(
-            "Queued delegation from session %s to agent %s: %s",
-            session.session_id,
-            target_agent,
-            instruction[:50],
-        )
+        if record:
+            store.queue_delegation({
+                "from_session": session.session_id,
+                "to_agent": target_agent,
+                "instruction": instruction,
+                "ts": now_dt,
+            })
+            logger.info(
+                "Queued delegation from session %s to agent %s: %s",
+                session.session_id,
+                target_agent,
+                instruction[:50],
+            )
         return {"status": "delegated", "target_agent": target_agent}
 
     # 11. vault.get

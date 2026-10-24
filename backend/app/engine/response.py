@@ -83,7 +83,7 @@ def decide(tier: Tier, event: Event, session: SessionState) -> Decision:
         # Egress, delegation, payments, writes to confidential/restricted -> hold
         is_held = (
             action_type in ("egress", "delegate")
-            or event.tool in ("payment.create", "purchase_request.create")
+            or event.tool == "payment.create"  # purchase_requests is internal → not held (SPEC §8)
             or (action_type == "write" and event.sensitivity in (Sensitivity.confidential, Sensitivity.restricted))
         )
         if is_held:

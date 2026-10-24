@@ -110,15 +110,24 @@ def test_session_freeze_and_restore():
         restore_res = client.post(f"/v1/sessions/{sid}/restore")
         assert restore_res.status_code == 200
         assert restore_res.json()["status"] == "restored"
-        new_token = restore_res.json()["token"]
-        assert new_token != token
+        # The console never receives a bearer token
+        assert "token" not in restore_res.json()
 
-        # Call with new token succeeds
+        # The agent's next call (old token) succeeds and carries the fresh token once
         call_ok = client.post(
             "/v1/gateway/call",
-            headers={"Authorization": f"Bearer {new_token}", "X-Doppel-Sigil": sigil},
+            headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil},
             json={"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}},
         )
         assert call_ok.status_code == 200
         assert call_ok.json()["status"] == "ok"
+        new_token = call_ok.json()["new_token"]
+        assert new_token and new_token != token
+
+        # Old token is now retired; the fresh one works and is not handed out again
+        body = {"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}}
+        assert client.post("/v1/gateway/call", headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil}, json=body).status_code == 401
+        again = client.post("/v1/gateway/call", headers={"Authorization": f"Bearer {new_token}", "X-Doppel-Sigil": sigil}, json=body)
+        assert again.status_code == 200
+        assert again.json()["new_token"] is None
 

@@ -13,6 +13,7 @@ from app.models import (
     TaintLabel,
     Tier,
 )
+from app.world.egress import is_known
 
 # Canonical detector weights per SPEC §7
 DETECTOR_WEIGHTS: dict[str, float] = {
@@ -116,8 +117,13 @@ def fuse(
     if d7_res and d7_res.score >= 0.9 and (is_sensitive or is_egress):
         event_risk = max(event_risk, 80)
 
-    # Floor: contract violation + egress to unknown host >= 80
-    if d1_res and d1_res.score >= 0.9 and is_egress:
+    # Floor: contract violation + egress to unknown host >= 80 (this call's egress, not any earlier one)
+    egress_to_unknown = (
+        event is not None
+        and event.action_type == "egress"
+        and not is_known(str(event.target or "").split("@")[-1])
+    )
+    if d1_res and d1_res.score >= 0.9 and egress_to_unknown:
         event_risk = max(event_risk, 80)
 
     # Floor: chain inheritance

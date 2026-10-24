@@ -15,9 +15,9 @@ from app.engine.response import decide
 from app.engine.risk import fuse
 from app.gateway.sigil import check
 from app.gateway.taint import mark_egress_attempt, update_taint
-from app.gateway.tokens import verify
+from app.gateway.tokens import revoke, verify
 from app.ids import new_id
-from app.models import Approval, Decision, Event, SinkholeCapture
+from app.models import Approval, Decision, Event, SessionState, SinkholeCapture
 from app.store import get_store
 from app.world.egress import extract_host
 from app.world.executor import execute, resolve_execution_data_class
@@ -25,6 +25,40 @@ from app.world.files import get_all_watermarks, get_decoy_mirror_content, get_fi
 from app.world.tools import get_tool
 
 logger = logging.getLogger(__name__)
+
+
+def sinkhole_call(session: SessionState, tool: str, args: dict[str, Any], target: Optional[str]) -> Any:
+    """Capture the call in the evidence locker; reply exactly like the real tool, touch nothing real."""
+    store = get_store()
+    raw_payload = args.get("body", args)
+    payload_str = str(raw_payload)
+    url_arg = args.get("url")
+    to_arg = args.get("to")
+    if url_arg:
+        host_target = extract_host(str(url_arg))
+    elif to_arg:
+        host_target = str(to_arg).split("@")[-1].lower()
+    else:
+        host_target = target or ""
+
+    all_wms = get_all_watermarks(get_settings().SCENARIO_SEED)
+    matched = [(src, wm) for src, wm in all_wms.items() if wm in payload_str]
+    store.save_sinkhole_capture(SinkholeCapture(
+        capture_id=new_id(),
+        session_id=session.session_id,
+        agent_id=session.agent_id,
+        tool=tool,
+        host=host_target,
+        destination=host_target,
+        payload=raw_payload,
+        bytes=len(payload_str.encode("utf-8")),
+        matched_watermarks=[wm for _, wm in matched],
+        leaked_decoy=matched[0][0] if matched else None,
+        watermark_detected=matched[0][1] if matched else None,
+        timestamp=get_clock().now(),
+    ))
+    # Same code path as a real success, so keys/shape can never drift apart
+    return execute(tool=tool, args=args, session=session, record=False)
 
 
 def handle_call(
@@ -269,55 +303,7 @@ def handle_call(
         event.result = None
 
     elif decision == Decision.sinkhole:
-        # Task 4: Store SinkholeCapture without writing to real world or egress log
-        raw_payload = args.get("body", args)
-        payload_str = str(raw_payload)
-        payload_bytes = len(payload_str.encode("utf-8"))
-        url_arg = args.get("url")
-        to_arg = args.get("to")
-        if url_arg:
-            host_target = extract_host(str(url_arg))
-        elif to_arg:
-            to_str = str(to_arg)
-            host_target = to_str.split("@")[-1].lower() if "@" in to_str else to_str.lower()
-        else:
-            host_target = event.target or ""
-
-        all_wms = get_all_watermarks(settings.SCENARIO_SEED)
-        matched_wms = [wm for wm in all_wms.values() if wm in payload_str]
-        leaked_decoy = None
-        for path_key, wm in all_wms.items():
-            if wm in matched_wms:
-                leaked_decoy = path_key
-                break
-
-        capture = SinkholeCapture(
-            capture_id=new_id(),
-            session_id=session.session_id,
-            agent_id=session.agent_id,
-            tool=tool,
-            host=host_target,
-            destination=host_target,
-            payload=raw_payload,
-            bytes=payload_bytes,
-            matched_watermarks=matched_wms,
-            leaked_decoy=leaked_decoy,
-            watermark_detected=matched_wms[0] if matched_wms else None,
-            timestamp=clock.now(),
-        )
-        store.save_sinkhole_capture(capture)
-
-        # Realistic success-shaped reply
-        if tool == "http.post":
-            result = {"status": "uploaded", "id": f"f_{new_id()[:8]}"}
-        elif tool == "email.send":
-            result = {"status": "sent", "id": f"msg_{new_id()[:8]}"}
-        elif tool == "agent.delegate":
-            result = {"status": "delegated", "task_id": f"tsk_{new_id()[:8]}"}
-        elif tool in ("payment.create", "purchase_request.create"):
-            result = {"status": "queued", "id": f"req_{new_id()[:8]}"}
-        else:
-            result = {"status": "ok", "id": new_id()}
+        result = sinkhole_call(session, tool, args, event.target)
         event.result = result
 
     elif decision == Decision.decoy:
@@ -355,6 +341,9 @@ def handle_call(
     status = "pending_approval" if decision == Decision.hold else "ok"
     returned_token = session.pending_new_token or reissued_token
     session.pending_new_token = None
+    if returned_token and claims["jti"] != session.current_jti:
+        # Rotation delivered (SHRINK or restore): the presented token is now retired
+        revoke(claims["jti"])
     store.save_session(session)
 
     return {

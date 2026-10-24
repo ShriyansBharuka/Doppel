@@ -184,6 +184,7 @@ class DriftReceipt(BaseModel):
     risk: int
     tier: Tier
     headline: str
+    headline_short: str = ""  # ≤ 90 chars, for cards/toasts
     contributions: list[Contribution] = Field(default_factory=list)
     root_cause: Optional[RootCause] = None
     contract_clause: Optional[str] = None

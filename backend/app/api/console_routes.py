@@ -9,7 +9,9 @@ from app.config import get_settings
 from app.contracts.loader import load_contracts
 from app.engine.baseline import init_baseline
 from app.gateway.taint import update_taint
-from app.gateway.tokens import reissue
+from app.gateway.pipeline import sinkhole_call
+from app.gateway.tokens import derive_scopes, issue
+from app.ids import new_id
 from app.models import Alert, Approval, Decision, DriftReceipt, Event, SinkholeCapture, Tier
 from app.store import get_store
 from app.world.executor import execute
@@ -107,23 +109,29 @@ def restore_session(session_id: str) -> dict[str, Any]:
     elif session.taint_refs:
         store.blocklist_content_hash(session.taint_refs[-1].sha256)
         logger.info("Quarantined taint ref content hash: %s", session.taint_refs[-1].sha256)
+    if alert:
+        alert.status = "resolved"
+        store.save_alert(alert)
+    session.alert_id = None
 
-    # Reissue fresh token with full contract scopes
+    # Fresh full-scope token. The console never sees it: it is handed to the agent as new_token on
+    # its next call, and the token it presents then is revoked (pipeline step 8).
     contract = store.get_contract(session.agent_id)
-    scopes: list[str] = []
-    if contract:
-        for tool_name in contract.allowed_tools:
-            ts = get_tool(tool_name)
-            if ts and ts.effect.value not in scopes:
-                scopes.append(ts.effect.value)
-
-    new_token = reissue(session, scopes or ["read"])
+    fresh_jti = new_id()
+    session.pending_new_token = issue(
+        agent_id=session.agent_id,
+        session_id=session.session_id,
+        scopes=(derive_scopes(contract) if contract else None) or ["read"],
+        act=session.act,
+        jti=fresh_jti,
+    )
+    session.token = session.pending_new_token
+    session.current_jti = fresh_jti
     store.save_session(session)
 
     return {
         "status": "restored",
         "session_id": session_id,
-        "token": new_token,
     }
 
 
@@ -191,20 +199,25 @@ def approve_action(target_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Pending approval '{target_id}' not found")
 
     if approval.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Approval is already {approval.status}")
+        raise HTTPException(status_code=409, detail=f"Approval is already {approval.status}")
 
     session = store.get_session(approval.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found for approval")
 
-    # Execute the held call
-    res = execute(tool=approval.tool, args=approval.args, session=session)
-    update_taint(session=session, tool=approval.tool, args=approval.args, result=res)
+    ev = store.get_event(approval.event_id)
+    if session.decoy_mode or session.tier == Tier.ISOLATE:
+        # Session went rogue while the call waited: never let the approval reach the real world
+        res = sinkhole_call(session, approval.tool, approval.args, ev.target if ev else None)
+        decision = Decision.sinkhole
+    else:
+        res = execute(tool=approval.tool, args=approval.args, session=session)
+        update_taint(session=session, tool=approval.tool, args=approval.args, result=res)
+        decision = Decision.allow
 
     # Update event record
-    ev = store.get_event(approval.event_id)
     if ev:
-        ev.decision = Decision.allow
+        ev.decision = decision
         ev.result = res
         store.save_event(ev)
 
@@ -240,7 +253,7 @@ def deny_action(target_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Pending approval '{target_id}' not found")
 
     if approval.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Approval is already {approval.status}")
+        raise HTTPException(status_code=409, detail=f"Approval is already {approval.status}")
 
     ev = store.get_event(approval.event_id)
     if ev:
