@@ -19,3 +19,33 @@
 [  161207ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
 [  172135ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
 [  186741ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  200110ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  214540ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  228678ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  242664ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  255729ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  269158ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  282819ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  295335ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  310329ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  324030ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  336197ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  350525ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  362063ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  373908ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  388011ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  399669ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  414690ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  426212ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  440946ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  453966ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  468592ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  481457ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  496352ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  510428ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  522743ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  535651ms] [ERROR] WebSocket connection to 'ws://localhost:8001/v1/stream' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5200/src/useStream.ts:15
+[  543886ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8001/v1/meta:0
+[  543887ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8001/health:0
+[  543887ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8001/v1/meta:0
+[  543887ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8001/health:0

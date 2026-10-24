@@ -715,6 +715,10 @@ def test_benign_false_alarm_rate():
                 assert final_sess is not None
                 if final_sess.risk >= 30 or final_sess.tier != Tier.ALLOW:
                     flagged_sessions += 1
+                    evs = store.list_events(session_id=sid)
+                    for ev in evs:
+                        sc = {d.name: d.score for d in ev.detector_results if d.score > 0}
+                        print(f"FLAGGED {agent_id} {ev.tool} risk={ev.risk} scores={sc} ev={ev.detector_results}")
 
     assert total_sessions == 60
     assert flagged_sessions == 0

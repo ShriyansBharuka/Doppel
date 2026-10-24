@@ -1,6 +1,14 @@
 {
-  "date": "2026-10-24T13:18:02.589577+00:00",
+  "date": "2026-10-24T14:52:00.458737+00:00",
   "entries": [
+    {
+      "model": "gemini-3.1-flash-lite",
+      "variant": 1,
+      "runs": 10,
+      "followed": 0,
+      "caught_of_followed": 0,
+      "false_alarms_on_resisted": 0
+    },
     {
       "model": "gemini-3.5-flash-lite",
       "variant": 0,
@@ -8,16 +16,40 @@
       "followed": 0,
       "caught_of_followed": 0,
       "false_alarms_on_resisted": 0
+    },
+    {
+      "model": "gemini-3.5-flash-lite",
+      "variant": 1,
+      "runs": 10,
+      "followed": 0,
+      "caught_of_followed": 0,
+      "false_alarms_on_resisted": 0
+    },
+    {
+      "model": "gemini-3.5-flash-lite",
+      "variant": 2,
+      "runs": 10,
+      "followed": 0,
+      "caught_of_followed": 0,
+      "false_alarms_on_resisted": 0
+    },
+    {
+      "model": "gemini-3.5-flash-lite",
+      "variant": 3,
+      "runs": 10,
+      "followed": 0,
+      "caught_of_followed": 0,
+      "false_alarms_on_resisted": 0
     }
   ],
   "total": {
-    "runs": 10,
+    "runs": 50,
     "followed": 0,
     "caught_of_followed": 0,
     "false_alarms_on_resisted": 0
   },
-  "model": "gemini-3.5-flash-lite",
-  "runs": 10,
+  "model": "gemini-3.1-flash-lite",
+  "runs": 50,
   "followed": 0,
   "caught_of_followed": 0,
   "false_alarms_on_resisted": 0
