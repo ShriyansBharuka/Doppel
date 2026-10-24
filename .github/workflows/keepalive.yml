@@ -1,0 +1,21 @@
+name: Keepalive Health Check
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Doppel Render Service
+        env:
+          HEALTH_URL: ${{ secrets.DOPPEL_HEALTH_URL }}
+        run: |
+          if [ -n "$HEALTH_URL" ]; then
+            echo "Pinging health endpoint: $HEALTH_URL"
+            curl -fsSL --retry 3 --max-time 15 "$HEALTH_URL" || echo "Health check request failed"
+          else
+            echo "DOPPEL_HEALTH_URL secret not set. Skipping keepalive ping."
+          fi

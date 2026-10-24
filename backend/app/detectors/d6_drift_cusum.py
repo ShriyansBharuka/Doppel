@@ -52,7 +52,8 @@ class CusumTracker:
         self.mu0 = sum(training_day_divergences) / len(training_day_divergences)
         variance = sum((x - self.mu0) ** 2 for x in training_day_divergences) / len(training_day_divergences)
         std = math.sqrt(variance)
-        std_effective = max(std, 0.01)
+        # Epsilon only guards std == 0; a larger floor would silently replace the fitted h = 5·std (SPEC §6)
+        std_effective = max(std, 1e-6)
 
         self.kappa = 0.5 * std_effective
         self.h = 5.0 * std_effective

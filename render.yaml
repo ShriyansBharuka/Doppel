@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: doppel-gateway
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DOPPEL_ENV
+        value: prod
+      - key: DOPPEL_SECRET
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false  # the hosted console's origin; localhost is useless in prod
+      - key: SCENARIO_SEED
+        value: "42"

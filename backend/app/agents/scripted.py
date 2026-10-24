@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Optional
 
+from app.clock import get_clock
 from app.gateway.pipeline import handle_call
 from app.gateway.sessions import start_session
 
@@ -21,8 +22,12 @@ class ScriptedAgent:
         agent_id: str,
         runtime_fingerprint: Optional[str] = None,
         parent_session_id: Optional[str] = None,
+        think_time_s: float = 2.0,
     ) -> None:
         self.agent_id = agent_id
+        # Simulated gap before each call. Without it a frozen SimClock makes every gap 0 ms,
+        # which D8 reads as "machine speed" and inflates risk in every scenario.
+        self.think_time_s = think_time_s
         self.runtime_fingerprint = runtime_fingerprint or f"fp-{agent_id}"
         self.parent_session_id = parent_session_id
 
@@ -71,6 +76,10 @@ class ScriptedAgent:
         call_sigil = sigil if sigil is not None else self.sigil
         call_fp = runtime_fingerprint if runtime_fingerprint is not None else self.runtime_fingerprint
         call_args = args if args is not None else {}
+
+        clock = get_clock()
+        if self.think_time_s > 0 and hasattr(clock, "advance"):
+            clock.advance(self.think_time_s)
 
         response = handle_call(
             session_id=self.session_id,  # type: ignore[arg-type]

@@ -6,6 +6,7 @@ from typing import Any
 
 def _generate_procurement_session(
     rng: random.Random,
+    flow: str | None = None,
 ) -> list[tuple[str, dict[str, Any], str]]:
     items = ["SKU-001", "SKU-002", "SKU-003", "SKU-004"]
     vendors = ["Acme Industrial", "Globex Corp", "Industrial Depot"]
@@ -13,7 +14,7 @@ def _generate_procurement_session(
     vendor = rng.choice(vendors)
     amount = round(rng.uniform(150.0, 4800.0), 2)
 
-    flow = rng.choice(["standard", "fx_convert", "globex_quote", "multi_quote"])
+    flow = flow or rng.choice(["standard", "fx_convert", "globex_quote", "multi_quote"])
 
     if flow == "standard":
         return [

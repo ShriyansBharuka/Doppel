@@ -67,6 +67,7 @@ def run_s3(
     attacker = ScriptedAgent(
         agent_id="procurement-agent",
         runtime_fingerprint="fp-attacker-cloud-vm",
+        think_time_s=0.0,  # the 0.02 s gap above is the attack's own timing
     )
     attacker.session_id = session_id
     attacker.token = stolen_token

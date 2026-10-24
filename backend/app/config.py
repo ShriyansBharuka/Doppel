@@ -37,6 +37,8 @@ class Settings(BaseSettings):
                 raise ValueError("DOPPEL_SECRET must be set in non-dev environment")
             if not self.JWT_SECRET:
                 raise ValueError("JWT_SECRET must be set in non-dev environment")
+            if "*" in self.cors_origins_list:
+                raise ValueError("CORS_ORIGINS must list explicit origins (not '*') in non-dev environment")
         return self
 
     @property

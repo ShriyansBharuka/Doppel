@@ -362,3 +362,24 @@ def reset_state() -> dict[str, Any]:
         "contracts_loaded": len(contracts),
         "tools_pinned": len(store.get_all_pinned_tool_hashes()),
     }
+
+
+@router.get("/meta")
+def get_meta() -> dict[str, Any]:
+    """System metadata per Prompt 4b Task 5."""
+    from app.scenarios.s1l_replay import get_latest_recording_meta
+
+    settings = get_settings()
+    rec_meta = get_latest_recording_meta()
+
+    scenarios = ["s1", "s2", "s3", "s4", "s5", "s6"]
+    if rec_meta:
+        scenarios.append("s1l")
+
+    return {
+        "version": "0.1.0",
+        "mode": settings.DOPPEL_ENV,
+        "scenarios_available": scenarios,
+        "live_recording": rec_meta,
+    }
+

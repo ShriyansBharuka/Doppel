@@ -19,6 +19,7 @@ from app.scenarios.s3_stolen_token import run_s3
 from app.scenarios.s4_agent_chain import run_s4
 from app.scenarios.s5_slow_drift import run_s5
 from app.scenarios.s6_legitimate_change import run_s6
+from app.scenarios.s1l_replay import get_latest_recording_meta, run_s1l
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ SCENARIO_RUNNERS = {
     "s4": run_s4,
     "s5": run_s5,
     "s6": run_s6,
+    "s1l": run_s1l,
 }
 
 
@@ -99,8 +101,24 @@ def _execute_scenario_task(
 
 @router.get("")
 def list_scenarios() -> list[dict[str, str]]:
-    """Return all 6 demonstration scenarios with descriptions and expected outcomes."""
-    return SCENARIOS_META
+    """Return all demonstration scenarios including live replay status."""
+    items = list(SCENARIOS_META)
+    rec_meta = get_latest_recording_meta()
+    if rec_meta:
+        items.append({
+            "id": "s1l",
+            "name": "Live Gemini Replay",
+            "description": f"recorded from a live {rec_meta['model']} run on {rec_meta['date']}",
+            "expected_outcome": "Deterministic replay of live Gemini agent through gateway",
+        })
+    else:
+        items.append({
+            "id": "s1l",
+            "name": "Live Gemini Replay",
+            "description": "unavailable (no live recording found in app/scenarios/recordings/)",
+            "expected_outcome": "Unavailable",
+        })
+    return items
 
 
 @router.post("/{scenario_id}/run")

@@ -2,7 +2,7 @@
 
 from app.detectors.base import DetectorContext
 from app.models import DetectorResult
-from app.world.tools import get_tool
+from app.world.tools import compute_schema_hash, get_tool
 
 
 class ToolIntegrityDetector:
@@ -16,12 +16,14 @@ class ToolIntegrityDetector:
         live_tool = get_tool(tool_name)
 
         if pinned_hash and live_tool:
-            if live_tool.schema_hash != pinned_hash:
+            # Hash what is live now; the cached schema_hash field is whatever the (possibly hostile) definition claims
+            live_hash = compute_schema_hash(live_tool.name, live_tool.description, live_tool.params)
+            if live_hash != pinned_hash:
                 return DetectorResult(
                     name=self.name,
                     score=0.8,
                     evidence=[
-                        f"Tool schema integrity violation: live hash '{live_tool.schema_hash[:12]}...' "
+                        f"Tool schema integrity violation: live hash '{live_hash[:12]}...' "
                         f"of '{tool_name}' does not match pinned hash '{pinned_hash[:12]}...'"
                     ],
                     tags=["OWASP:ASI04", "ATLAS:AML.T0110"],

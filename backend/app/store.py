@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Any, Optional, Protocol, runtime_checkable
 from app.config import get_settings
@@ -9,6 +10,30 @@ from app.models import (
     SessionState,
     SinkholeCapture,
 )
+
+logger = logging.getLogger(__name__)
+
+
+class MongoAuditWriter:
+    """Optional write-through audit logger to MongoDB."""
+
+    def __init__(self, uri: str) -> None:
+        self.uri = uri
+        self._client: Any = None
+
+    def _get_db(self) -> Any:
+        if self._client is None:
+            import pymongo
+            self._client = pymongo.MongoClient(self.uri, serverSelectionTimeoutMS=1000)
+        return self._client.get_default_database("doppel")
+
+    def write_through(self, collection_name: str, doc: dict[str, Any]) -> None:
+        """Write-through copy of record to MongoDB without blocking or raising."""
+        try:
+            db = self._get_db()
+            db[collection_name].insert_one(doc)
+        except Exception as exc:
+            logger.warning("MongoDB write-through to '%s' failed: %s", collection_name, exc)
 
 
 @runtime_checkable
@@ -101,6 +126,8 @@ class InMemoryStore:
         self._egress_logs: list[dict[str, Any]] = []
         self._purchase_requests: list[dict[str, Any]] = []
         self._payments: list[dict[str, Any]] = []
+        mongo_uri = get_settings().MONGO_URI
+        self._mongo_writer = MongoAuditWriter(mongo_uri) if mongo_uri else None
 
     # Contracts
     def save_contract(self, contract: Contract) -> None:
@@ -125,6 +152,8 @@ class InMemoryStore:
     # Events
     def save_event(self, event: Event) -> None:
         self._events[event.event_id] = event
+        if self._mongo_writer:
+            self._mongo_writer.write_through("events", event.model_dump(mode="json"))
 
     def get_event(self, event_id: str) -> Optional[Event]:
         return self._events.get(event_id)
@@ -137,6 +166,8 @@ class InMemoryStore:
     # Alerts
     def save_alert(self, alert: Alert) -> None:
         self._alerts[alert.alert_id] = alert
+        if self._mongo_writer:
+            self._mongo_writer.write_through("alerts", alert.model_dump(mode="json"))
 
     def get_alert(self, alert_id: str) -> Optional[Alert]:
         return self._alerts.get(alert_id)
@@ -153,6 +184,8 @@ class InMemoryStore:
     # Sinkhole captures
     def save_sinkhole_capture(self, capture: SinkholeCapture) -> None:
         self._sinkhole_captures.append(capture)
+        if self._mongo_writer:
+            self._mongo_writer.write_through("sinkhole_captures", capture.model_dump(mode="json"))
 
     def list_sinkhole_captures(self, session_id: Optional[str] = None) -> list[SinkholeCapture]:
         if session_id:
