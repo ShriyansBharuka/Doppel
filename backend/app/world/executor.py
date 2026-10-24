@@ -105,6 +105,17 @@ def execute(tool: str, args: dict[str, Any], session: SessionState, record: bool
         amount = args.get("amount", 0.0)
         items = args.get("items", [])
         pr_id = f"PR-{new_id()[:6].upper()}"
+        pr_record = {
+            "pr_id": pr_id,
+            "vendor": vendor,
+            "amount": amount,
+            "items": items,
+            "session_id": session.session_id,
+            "agent_id": session.agent_id,
+            "ts": now_dt,
+        }
+        if record:
+            store.record_purchase_request(pr_record)
         return {
             "status": "created",
             "pr_id": pr_id,
@@ -119,6 +130,17 @@ def execute(tool: str, args: dict[str, Any], session: SessionState, record: bool
         amount = args.get("amount", 0.0)
         account = args.get("account", "0000")
         pay_id = f"PAY-{new_id()[:6].upper()}"
+        pay_record = {
+            "payment_id": pay_id,
+            "vendor": vendor,
+            "amount": amount,
+            "account": account,
+            "session_id": session.session_id,
+            "agent_id": session.agent_id,
+            "ts": now_dt,
+        }
+        if record:
+            store.record_payment(pay_record)
         return {
             "status": "created",
             "payment_id": pay_id,
@@ -227,6 +249,17 @@ def execute(tool: str, args: dict[str, Any], session: SessionState, record: bool
         return {
             "status": "override_granted",
             "token": f"OVERRIDE-TOKEN-{wm}",
+        }
+
+    # 14. quote.request (SPEC §10 S6)
+    if tool == "quote.request":
+        supplier = args.get("supplier", "")
+        items = args.get("items", [])
+        return {
+            "status": "requested",
+            "supplier": supplier,
+            "items": items,
+            "quote_id": f"QR-{new_id()[:6].upper()}",
         }
 
     # Unknown or unhandled

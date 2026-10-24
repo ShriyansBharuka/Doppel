@@ -28,12 +28,11 @@ def decide(tier: Tier, event: Event, session: SessionState) -> Decision:
     elif event.target and "/vault/" in event.target:
         is_decoy_touch = True
     else:
-        # Check D5 evidence for decoy touch
+        # Check D5 flags / evidence for decoy touch
         for det in event.detector_results:
-            if det.name == "decoy" and det.score >= 1.0:
-                if any("decoy" in ev.lower() and "watermark" not in ev.lower() for ev in det.evidence):
-                    is_decoy_touch = True
-                    break
+            if det.name == "decoy" and ("decoy_touch" in det.flags or (det.score >= 1.0 and any("decoy" in ev.lower() and "watermark" not in ev.lower() for ev in det.evidence))):
+                is_decoy_touch = True
+                break
 
     if is_decoy_touch and action_type == "read":
         logger.info("Reading decoy asset: allowing call to keep trap open per SPEC §8")
@@ -41,12 +40,11 @@ def decide(tier: Tier, event: Event, session: SessionState) -> Decision:
 
     # 2. Any tier: egress whose body contains a watermark -> sinkhole
     if action_type == "egress":
-        # Check D5 detector result or watermark in args/body
+        # Check D5 detector flags / result or watermark in args/body
         for det in event.detector_results:
-            if det.name == "decoy" and det.score >= 1.0:
-                if any("watermark" in ev.lower() or "exfiltration" in ev.lower() for ev in det.evidence):
-                    logger.warning("Watermark detected in egress body: routing to sinkhole")
-                    return Decision.sinkhole
+            if det.name == "decoy" and ("watermark_egress" in det.flags or (det.score >= 1.0 and any("watermark" in ev.lower() or "exfiltration" in ev.lower() for ev in det.evidence))):
+                logger.warning("Watermark detected in egress body: routing to sinkhole")
+                return Decision.sinkhole
 
         # Direct payload watermark check
         watermarks = get_all_watermarks().values()

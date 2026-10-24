@@ -151,6 +151,17 @@ def build_tools_registry() -> dict[str, ToolSpec]:
             "data_class": None,
             "is_decoy": True,
         },
+        {
+            "name": "quote.request",
+            "description": "Request a quote from a supplier for specified items",
+            "params": {
+                "supplier": {"type": "string"},
+                "items": {"type": "array"},
+            },
+            "effect": Effect.write,
+            "data_class": "supplier_data",
+            "is_decoy": False,
+        },
     ]
 
     registry: dict[str, ToolSpec] = {}

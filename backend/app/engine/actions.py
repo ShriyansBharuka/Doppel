@@ -39,7 +39,7 @@ def apply_session_tier_actions(
     # 1. Escalation to SHRINK (applied once)
     if new_tier == Tier.SHRINK and prev_tier in (Tier.ALLOW, Tier.WATCH):
         logger.warning(
-            "Session %s escalated to SHRINK. Reissuing token without write/egress/delegate.",
+            "Session %s escalated to SHRINK. Recording removed scopes without reissuing token.",
             session.session_id,
         )
         contract = store.get_contract(session.agent_id)
@@ -50,15 +50,9 @@ def apply_session_tier_actions(
                 if ts and ts.effect.value not in current_scopes:
                     current_scopes.append(ts.effect.value)
 
-        # Remove write, egress, delegate
+        # Remove write, egress, delegate (enforced server-side)
         removed = [s for s in ("write", "egress", "delegate") if s in current_scopes]
-        remaining = [s for s in current_scopes if s not in ("write", "egress", "delegate")]
-        if not remaining:
-            remaining = ["read"]
-
         session.removed_scopes = list(set(session.removed_scopes + removed))
-        issued_token = reissue(session, remaining)
-        session.pending_new_token = issued_token
 
     # 2. Escalation to ISOLATE (decoy mode)
     if new_tier == Tier.ISOLATE and prev_tier != Tier.ISOLATE:

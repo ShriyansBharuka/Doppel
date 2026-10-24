@@ -12,6 +12,10 @@ class Clock(Protocol):
         """Return the current datetime (timezone-aware UTC)."""
         ...
 
+    def reset(self) -> None:
+        """Reset clock state if applicable."""
+        ...
+
 
 class RealClock:
     """Clock implementation returning the actual current wall-clock time."""
@@ -19,6 +23,10 @@ class RealClock:
     def now(self) -> datetime:
         """Return current UTC wall-clock time."""
         return datetime.now(timezone.utc)
+
+    def reset(self) -> None:
+        """No-op for wall-clock time."""
+        pass
 
 
 class SimClock:
@@ -42,6 +50,10 @@ class SimClock:
         """Set simulated clock to day n relative to anchor time."""
         self._current_time = self._anchor_time + timedelta(days=n)
         return self._current_time
+
+    def reset(self) -> None:
+        """Reset simulated clock back to anchor time."""
+        self._current_time = self._anchor_time
 
 
 _active_clock: Clock = RealClock()

@@ -86,11 +86,14 @@ def fuse(
 
     # Floor: watermark in egress = 100 ("proven exfiltration")
     is_watermark_in_egress = False
-    if d5_res and d5_res.score >= 1.0:
-        for ev_line in d5_res.evidence:
-            if "watermark" in ev_line.lower() or "exfiltration" in ev_line.lower():
-                is_watermark_in_egress = True
-                break
+    if d5_res and ("watermark_egress" in d5_res.flags or d5_res.score >= 1.0):
+        if "watermark_egress" in d5_res.flags:
+            is_watermark_in_egress = True
+        else:
+            for ev_line in d5_res.evidence:
+                if "watermark" in ev_line.lower() or "exfiltration" in ev_line.lower():
+                    is_watermark_in_egress = True
+                    break
 
     if not is_watermark_in_egress and event is not None and event.action_type == "egress":
         from app.world.files import get_all_watermarks
@@ -101,20 +104,18 @@ def fuse(
 
     if is_watermark_in_egress:
         event_risk = 100
-    elif d5_res and d5_res.score >= 1.0:
+    elif d5_res and ("decoy_touch" in d5_res.flags or d5_res.score >= 1.0):
         # Floor: decoy touch >= 90
         event_risk = max(event_risk, 90)
 
-    # Floor: wrong/missing sigil + sensitive read or egress >= 80
-    is_sensitive = (
-        sensitivity in (Sensitivity.confidential, Sensitivity.restricted)
-        or TaintLabel.SENSITIVE_READ in session.taint_labels
+    # Floor: wrong/missing sigil + this call is sensitive read or egress >= 80 (Task 0.c)
+    is_this_call_sensitive = sensitivity in (Sensitivity.confidential, Sensitivity.restricted)
+    is_this_call_egress = event is not None and event.action_type == "egress"
+    has_bad_sigil = (
+        d7_res is not None
+        and ("sigil_missing" in d7_res.flags or "sigil_wrong" in d7_res.flags or d7_res.score >= 0.9)
     )
-    is_egress = (
-        (event is not None and event.action_type == "egress")
-        or TaintLabel.EGRESS in session.taint_labels
-    )
-    if d7_res and d7_res.score >= 0.9 and (is_sensitive or is_egress):
+    if has_bad_sigil and (is_this_call_sensitive or is_this_call_egress):
         event_risk = max(event_risk, 80)
 
     # Floor: contract violation + egress to unknown host >= 80 (this call's egress, not any earlier one)
@@ -123,7 +124,7 @@ def fuse(
         and event.action_type == "egress"
         and not is_known(str(event.target or "").split("@")[-1])
     )
-    if d1_res and d1_res.score >= 0.9 and egress_to_unknown:
+    if d1_res and ("egress_unknown_host" in d1_res.flags or (d1_res.score >= 0.9 and egress_to_unknown)):
         event_risk = max(event_risk, 80)
 
     # Floor: chain inheritance

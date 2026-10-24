@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.console_routes import router as console_router
 from app.api.gateway_routes import router as gateway_router
+from app.api.scenario_routes import router as scenario_router
+from app.stream import router as stream_router
 from app.config import get_settings
 from app.contracts.loader import load_contracts, verify_contract
 from app.engine.baseline import init_baseline
@@ -65,9 +67,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register Gateway and Console Routers
+# Register Gateway, Console, Stream, and Scenario Routers
 app.include_router(gateway_router)
 app.include_router(console_router)
+app.include_router(stream_router)
+app.include_router(scenario_router)
 
 
 @app.get("/health")

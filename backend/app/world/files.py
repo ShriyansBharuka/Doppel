@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 _DYNAMIC_WATERMARKS: dict[str, str] = {}
 
 
+def clear_dynamic_watermarks() -> None:
+    """Clear all dynamically generated mirror decoy watermarks."""
+    _DYNAMIC_WATERMARKS.clear()
+
+
 def generate_watermark(seed: int, path: str) -> str:
     """Generate deterministic decoy watermark DPL-WM- + 12 hex chars."""
     raw = f"{seed}:{path}".encode("utf-8")

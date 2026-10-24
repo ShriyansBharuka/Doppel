@@ -129,6 +129,7 @@ class DetectorResult(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     side_effects: list[str] = Field(default_factory=list)
+    flags: set[str] = Field(default_factory=set)
 
 
 class Event(BaseModel):
@@ -217,6 +218,7 @@ class SessionState(BaseModel):
     alert_id: Optional[str] = None
     pending_new_token: Optional[str] = None
     act: list[str] = Field(default_factory=list)
+    call_count: int = 0
     created_at: datetime
     updated_at: datetime
     recent_call_timestamps: list[datetime] = Field(default_factory=list)

@@ -69,10 +69,18 @@ def start_session(
             if not instruction_text:
                 instruction_text = f"delegated_instruction_from_{parent_session.agent_id}"
 
+            parent_cause = parent_session.taint_refs[-1].source if parent_session.taint_refs else parent_session.agent_id
+            if parent_cause.startswith("/inbox/"):
+                cause_label = parent_cause[len("/inbox/"):]
+            elif "/" in parent_cause:
+                cause_label = parent_cause.split("/")[-1]
+            else:
+                cause_label = parent_cause
+
             instruction_hash = hashlib.sha256(instruction_text.encode("utf-8")).hexdigest()
             delegation_ref = TaintRef(
                 content_id=f"delegation:{parent_session_id}",
-                source=f"parent_instruction:{parent_session.agent_id}",
+                source=f"delegated instruction from {cause_label}",
                 sha256=instruction_hash,
                 ts=now_dt,
             )

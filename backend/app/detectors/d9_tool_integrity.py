@@ -26,6 +26,7 @@ class ToolIntegrityDetector:
                     ],
                     tags=["OWASP:ASI04", "ATLAS:AML.T0110"],
                     side_effects=[f"disable_tool:{tool_name}"],
+                    flags={"tool_integrity_violation"},
                 )
 
         return DetectorResult(
@@ -33,4 +34,5 @@ class ToolIntegrityDetector:
             score=0.0,
             evidence=[],
             tags=["OWASP:ASI04", "ATLAS:AML.T0110"],
+            flags=set(),
         )

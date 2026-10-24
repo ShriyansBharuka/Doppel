@@ -1,5 +1,6 @@
 """Console management and inspection API routes per SPEC §8, §9, §11."""
 
+from datetime import timedelta
 import logging
 from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Query
@@ -7,15 +8,16 @@ from fastapi import APIRouter, HTTPException, Query
 from app.clock import get_clock
 from app.config import get_settings
 from app.contracts.loader import load_contracts
+from app.detectors.d6_drift_cusum import reset_drift_trackers
 from app.engine.baseline import init_baseline
 from app.gateway.taint import update_taint
 from app.gateway.pipeline import sinkhole_call
 from app.gateway.tokens import derive_scopes, issue
-from app.ids import new_id
+from app.ids import new_id, set_seed
 from app.models import Alert, Approval, Decision, DriftReceipt, Event, SinkholeCapture, Tier
 from app.store import get_store
 from app.world.executor import execute
-from app.world.files import init_world_files
+from app.world.files import clear_dynamic_watermarks, init_world_files
 from app.world.tools import get_tool, init_tools, pin_hashes
 
 logger = logging.getLogger(__name__)
@@ -115,7 +117,12 @@ def restore_session(session_id: str) -> dict[str, Any]:
     session.alert_id = None
 
     # Fresh full-scope token. The console never sees it: it is handed to the agent as new_token on
-    # its next call, and the token it presents then is revoked (pipeline step 8).
+    # its next call. Pre-restore token stays valid for a 2-minute grace period (SPEC §8 / Prompt 4a Task 0.b).
+    clock = get_clock()
+    old_jti = session.current_jti
+    if old_jti:
+        store.revoke_jti(old_jti, after=clock.now() + timedelta(minutes=2))
+
     contract = store.get_contract(session.agent_id)
     fresh_jti = new_id()
     session.pending_new_token = issue(
@@ -227,6 +234,8 @@ def approve_action(target_id: str) -> dict[str, Any]:
     approval.resolved_at = clock.now()
     store.save_approval(approval)
     store.save_session(session)
+    from app.stream import get_broadcaster
+    get_broadcaster().broadcast_sync("approval", approval.model_dump())
 
     return {
         "status": "approved",
@@ -264,6 +273,8 @@ def deny_action(target_id: str) -> dict[str, Any]:
     approval.note = "denied by human"
     approval.resolved_at = clock.now()
     store.save_approval(approval)
+    from app.stream import get_broadcaster
+    get_broadcaster().broadcast_sync("approval", approval.model_dump())
 
     return {
         "status": "denied",
@@ -312,6 +323,18 @@ def list_events(session_id: Optional[str] = Query(None)) -> list[Event]:
     return store.list_events(session_id=session_id)
 
 
+@router.get("/world/state")
+def get_world_state() -> dict[str, Any]:
+    """Return real world state per SPEC §11 / Prompt 4a Task 0.g."""
+    store = get_store()
+    return {
+        "purchase_requests": store.get_purchase_requests(),
+        "payments": store.get_payments(),
+        "egress_log": store.get_egress_logs(),
+        "delegations": store.get_delegations(),
+    }
+
+
 @router.post("/reset")
 def reset_state() -> dict[str, Any]:
     """Clear store, rebuild world, re-pin tool hashes, and reload verified contracts."""
@@ -319,6 +342,11 @@ def reset_state() -> dict[str, Any]:
     settings = get_settings()
 
     store.reset()
+    clear_dynamic_watermarks()
+    reset_drift_trackers()
+    set_seed(settings.SCENARIO_SEED)
+    get_clock().reset()
+
     init_world_files(settings.SCENARIO_SEED)
     init_tools()
     pin_hashes(store)

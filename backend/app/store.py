@@ -1,5 +1,4 @@
-"""Storage interface and in-memory implementation."""
-
+from datetime import datetime
 from typing import Any, Optional, Protocol, runtime_checkable
 from app.config import get_settings
 from app.models import (
@@ -52,7 +51,7 @@ class Store(Protocol):
     def get_blocklisted_content_hashes(self) -> set[str]: ...
 
     # Revoked JTIs
-    def revoke_jti(self, jti: str) -> None: ...
+    def revoke_jti(self, jti: str, after: Optional[datetime] = None) -> None: ...
     def is_jti_revoked(self, jti: str) -> bool: ...
 
     # Disabled tools
@@ -74,6 +73,12 @@ class Store(Protocol):
     def record_egress(self, entry: dict[str, Any]) -> None: ...
     def get_egress_logs(self) -> list[dict[str, Any]]: ...
 
+    # Real world state tracking (purchase requests and payments)
+    def record_purchase_request(self, entry: dict[str, Any]) -> None: ...
+    def get_purchase_requests(self) -> list[dict[str, Any]]: ...
+    def record_payment(self, entry: dict[str, Any]) -> None: ...
+    def get_payments(self) -> list[dict[str, Any]]: ...
+
     # Reset
     def reset(self) -> None: ...
 
@@ -89,11 +94,13 @@ class InMemoryStore:
         self._sinkhole_captures: list[SinkholeCapture] = []
         self._approvals: dict[str, Approval] = {}
         self._blocklisted_content_hashes: set[str] = set()
-        self._revoked_jtis: set[str] = set()
+        self._revoked_jtis: dict[str, Optional[datetime]] = {}
         self._disabled_tools: set[str] = set()
         self._pinned_tool_hashes: dict[str, str] = {}
         self._delegations: list[dict[str, Any]] = []
         self._egress_logs: list[dict[str, Any]] = []
+        self._purchase_requests: list[dict[str, Any]] = []
+        self._payments: list[dict[str, Any]] = []
 
     # Contracts
     def save_contract(self, contract: Contract) -> None:
@@ -178,11 +185,17 @@ class InMemoryStore:
         return set(self._blocklisted_content_hashes)
 
     # Revoked JTIs
-    def revoke_jti(self, jti: str) -> None:
-        self._revoked_jtis.add(jti)
+    def revoke_jti(self, jti: str, after: Optional[datetime] = None) -> None:
+        self._revoked_jtis[jti] = after
 
     def is_jti_revoked(self, jti: str) -> bool:
-        return jti in self._revoked_jtis
+        if jti not in self._revoked_jtis:
+            return False
+        effective_at = self._revoked_jtis[jti]
+        if effective_at is None:
+            return True
+        from app.clock import get_clock
+        return get_clock().now() >= effective_at
 
     # Disabled tools
     def disable_tool(self, tool_name: str) -> None:
@@ -223,6 +236,19 @@ class InMemoryStore:
     def get_egress_logs(self) -> list[dict[str, Any]]:
         return list(self._egress_logs)
 
+    # Real world state tracking
+    def record_purchase_request(self, entry: dict[str, Any]) -> None:
+        self._purchase_requests.append(entry)
+
+    def get_purchase_requests(self) -> list[dict[str, Any]]:
+        return list(self._purchase_requests)
+
+    def record_payment(self, entry: dict[str, Any]) -> None:
+        self._payments.append(entry)
+
+    def get_payments(self) -> list[dict[str, Any]]:
+        return list(self._payments)
+
     # Reset
     def reset(self) -> None:
         """Reset all in-memory collections to empty states."""
@@ -238,6 +264,8 @@ class InMemoryStore:
         self._pinned_tool_hashes.clear()
         self._delegations.clear()
         self._egress_logs.clear()
+        self._purchase_requests.clear()
+        self._payments.clear()
 
 
 _global_in_memory_store = InMemoryStore()

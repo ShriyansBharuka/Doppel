@@ -19,7 +19,7 @@ def test_health_endpoint():
         data = response.json()
         assert data["status"] == "ok"
         assert data["contracts_loaded"] == 3
-        assert data["tools_pinned"] == 13
+        assert data["tools_pinned"] == 14
 
 
 def test_list_agents_endpoint():
@@ -67,7 +67,7 @@ def test_world_tools_endpoint():
         response = client.get("/v1/world/tools")
         assert response.status_code == 200
         tools = response.json()
-        assert len(tools) == 13
+        assert len(tools) == 14
 
         names = {t["name"] for t in tools}
         assert "doc.read" in names
@@ -80,54 +80,67 @@ def test_world_tools_endpoint():
 
 def test_session_freeze_and_restore():
     """Verify POST /v1/sessions/{id}/freeze and POST /v1/sessions/{id}/restore."""
-    with TestClient(app) as client:
-        sess_res = client.post(
-            "/v1/sessions",
-            json={"agent_id": "procurement-agent", "runtime_fingerprint": "fp-freeze-test"},
-        )
-        assert sess_res.status_code == 200
-        sid = sess_res.json()["session_id"]
-        token = sess_res.json()["token"]
-        sigil = sess_res.json()["sigil"]
+    from datetime import datetime, timezone
+    from app.clock import set_clock, SimClock, RealClock
 
-        # Freeze session
-        freeze_res = client.post(f"/v1/sessions/{sid}/freeze")
-        assert freeze_res.status_code == 200
-        assert freeze_res.json()["status"] == "frozen"
+    sim = SimClock(datetime.now(timezone.utc))
+    set_clock(sim)
+    try:
+        with TestClient(app) as client:
+            sess_res = client.post(
+                "/v1/sessions",
+                json={"agent_id": "procurement-agent", "runtime_fingerprint": "fp-freeze-test"},
+            )
+            assert sess_res.status_code == 200
+            sid = sess_res.json()["session_id"]
+            token = sess_res.json()["token"]
+            sigil = sess_res.json()["sigil"]
 
-        # Subsequent call returns 423 and records block event
-        call_res = client.post(
-            "/v1/gateway/call",
-            headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil},
-            json={"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}},
-        )
-        assert call_res.status_code == 423
-        evs = client.get(f"/v1/events?session_id={sid}").json()
-        assert len(evs) == 1
-        assert evs[0]["decision"] == "block"
+            # Freeze session
+            freeze_res = client.post(f"/v1/sessions/{sid}/freeze")
+            assert freeze_res.status_code == 200
+            assert freeze_res.json()["status"] == "frozen"
 
-        # Restore session
-        restore_res = client.post(f"/v1/sessions/{sid}/restore")
-        assert restore_res.status_code == 200
-        assert restore_res.json()["status"] == "restored"
-        # The console never receives a bearer token
-        assert "token" not in restore_res.json()
+            # Subsequent call returns 423 and records block event
+            call_res = client.post(
+                "/v1/gateway/call",
+                headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil},
+                json={"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}},
+            )
+            assert call_res.status_code == 423
+            evs = client.get(f"/v1/events?session_id={sid}").json()
+            assert len(evs) == 1
+            assert evs[0]["decision"] == "block"
 
-        # The agent's next call (old token) succeeds and carries the fresh token once
-        call_ok = client.post(
-            "/v1/gateway/call",
-            headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil},
-            json={"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}},
-        )
-        assert call_ok.status_code == 200
-        assert call_ok.json()["status"] == "ok"
-        new_token = call_ok.json()["new_token"]
-        assert new_token and new_token != token
+            # Restore session
+            restore_res = client.post(f"/v1/sessions/{sid}/restore")
+            assert restore_res.status_code == 200
+            assert restore_res.json()["status"] == "restored"
+            # The console never receives a bearer token
+            assert "token" not in restore_res.json()
 
-        # Old token is now retired; the fresh one works and is not handed out again
-        body = {"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}}
-        assert client.post("/v1/gateway/call", headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil}, json=body).status_code == 401
-        again = client.post("/v1/gateway/call", headers={"Authorization": f"Bearer {new_token}", "X-Doppel-Sigil": sigil}, json=body)
-        assert again.status_code == 200
-        assert again.json()["new_token"] is None
+            # The agent's next call (old token) succeeds and carries the fresh token once
+            body = {"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}}
+            call_ok = client.post(
+                "/v1/gateway/call",
+                headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil},
+                json=body,
+            )
+            assert call_ok.status_code == 200
+            assert call_ok.json()["status"] == "ok"
+            new_token = call_ok.json()["new_token"]
+            assert new_token and new_token != token
+
+            # Pre-restore token stays valid for 2-minute grace period (Task 0.b)
+            assert client.post("/v1/gateway/call", headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil}, json=body).status_code == 200
+
+            # Advance clock past 2-minute grace period (130 seconds) -> old token now revoked
+            sim.advance(130)
+            assert client.post("/v1/gateway/call", headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil}, json=body).status_code == 401
+
+            again = client.post("/v1/gateway/call", headers={"Authorization": f"Bearer {new_token}", "X-Doppel-Sigil": sigil}, json=body)
+            assert again.status_code == 200
+            assert again.json()["new_token"] is None
+    finally:
+        set_clock(RealClock())
 

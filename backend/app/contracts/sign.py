@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 import yaml
 
 from app.config import get_settings
@@ -27,6 +27,12 @@ def sign_contract_file(file_path: Path, secret: str) -> str:
         yaml.safe_dump(data, f, sort_keys=False)
 
     return sig
+
+
+def sign_contract(contract: Any, secret: str) -> str:
+    """Compute cryptographic HMAC-SHA256 signature for an in-memory Contract model."""
+    data = contract.model_dump() if hasattr(contract, "model_dump") else dict(contract)
+    return compute_contract_signature(data, secret)
 
 
 def sign_all_contracts(

@@ -222,6 +222,8 @@ def sync_session_alert(
         existing_alert.receipt = receipt
         store.save_alert(existing_alert)
         session.alert_id = existing_alert.alert_id
+        from app.stream import get_broadcaster
+        get_broadcaster().broadcast_sync("alert", existing_alert.model_dump())
         return existing_alert
     else:
         new_alert = Alert(
@@ -237,4 +239,6 @@ def sync_session_alert(
         )
         session.alert_id = new_alert.alert_id
         store.save_alert(new_alert)
+        from app.stream import get_broadcaster
+        get_broadcaster().broadcast_sync("alert", new_alert.model_dump())
         return new_alert

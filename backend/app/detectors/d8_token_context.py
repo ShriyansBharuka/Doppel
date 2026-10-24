@@ -15,6 +15,7 @@ class TokenContextDetector:
         pres_fp = ctx.event.runtime_fingerprint
 
         scores: list[tuple[float, str]] = []
+        flags: set[str] = set()
 
         # 1. Runtime fingerprint mismatch
         if orig_fp and pres_fp and orig_fp != pres_fp:
@@ -22,6 +23,7 @@ class TokenContextDetector:
                 0.8,
                 f"Runtime fingerprint mismatch: session initialized on '{orig_fp}' but call invoked from '{pres_fp}'",
             ))
+            flags.add("fingerprint_mismatch")
 
         # 2. Sub-50ms machine speed check (≥3 consecutive gaps < 50 ms)
         call_timestamps = session.recent_call_timestamps
@@ -35,6 +37,7 @@ class TokenContextDetector:
                     0.5,
                     f"Machine-speed execution loop detected: 3 consecutive calls with <50ms latency ({[round(g, 1) for g in gaps[-3:]]} ms)",
                 ))
+                flags.add("rapid_calls")
 
         if not scores:
             return DetectorResult(
@@ -42,6 +45,7 @@ class TokenContextDetector:
                 score=0.0,
                 evidence=[],
                 tags=["OWASP:ASI03"],
+                flags=set(),
             )
 
         max_score, top_evidence = max(scores, key=lambda x: x[0])
@@ -50,4 +54,5 @@ class TokenContextDetector:
             score=max_score,
             evidence=[top_evidence],
             tags=["OWASP:ASI03"],
+            flags=flags,
         )

@@ -109,6 +109,12 @@ _cusum_trackers: dict[str, CusumTracker] = {}
 _ewma_trackers: dict[str, EWMATracker] = {}
 
 
+def reset_drift_trackers() -> None:
+    """Clear all agent CUSUM and EWMA trackers."""
+    _cusum_trackers.clear()
+    _ewma_trackers.clear()
+
+
 def get_cusum_tracker(agent_id: str) -> CusumTracker:
     """Retrieve or create CusumTracker for an agent."""
     if agent_id not in _cusum_trackers:

@@ -83,6 +83,21 @@ class BaselineEngine:
         """Return the immutable anchor tool distribution for an agent."""
         return dict(self.frozen_anchors.get(agent_id, {}))
 
+    def apply_change_ticket(
+        self,
+        agent_id: str,
+        new_tool: str,
+        contract_tools: list[str],
+    ) -> None:
+        """Mark new tool and its transitions to/from existing contract tools as declared-known and re-capture frozen anchor per SPEC §4.3."""
+        self.agent_tool_counts[agent_id][new_tool] += 15
+        self.peer_tool_counts[new_tool] += 15
+        for t in contract_tools:
+            if t != new_tool:
+                self.agent_transitions[agent_id][t][new_tool] += 10
+                self.agent_transitions[agent_id][new_tool][t] += 10
+        self.capture_frozen_anchor(agent_id)
+
     # --- D2: Novelty Probabilities & Scoring ---
 
     def p_agent(self, agent_id: str, tool: str) -> float:

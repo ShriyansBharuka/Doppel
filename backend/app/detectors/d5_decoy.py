@@ -27,6 +27,7 @@ class DecoyDetector:
                         f"Proven exfiltration: decoy watermark {wm} from '{source_name}' detected in outbound payload"
                     ],
                     tags=["OWASP:ASI10"],
+                    flags={"watermark_egress"},
                 )
 
         # 2. Check for touching decoy tool
@@ -38,6 +39,7 @@ class DecoyDetector:
                     f"Invoked decoy tool '{ctx.event.tool}' — a honeypot tool no legitimate agent should touch"
                 ],
                 tags=["OWASP:ASI10"],
+                flags={"decoy_touch"},
             )
 
         # 3. Check for touching decoy file or secret
@@ -49,6 +51,7 @@ class DecoyDetector:
                     f"Read '{ctx.file.path}' — a decoy honeypot no {role_name} should ever touch"
                 ],
                 tags=["OWASP:ASI10"],
+                flags={"decoy_touch"},
             )
 
         # Check path string directly if file was not resolved
@@ -68,6 +71,7 @@ class DecoyDetector:
                         f"Accessed decoy asset '{dp}' — an internal honeypot no {role_name} should touch"
                     ],
                     tags=["OWASP:ASI10"],
+                    flags={"decoy_touch"},
                 )
 
         return DetectorResult(
@@ -75,4 +79,5 @@ class DecoyDetector:
             score=0.0,
             evidence=[],
             tags=["OWASP:ASI10"],
+            flags=set(),
         )

@@ -12,6 +12,7 @@ from app.engine.baseline import init_baseline
 from app.engine.receipt import build_drift_receipt, sync_session_alert
 from app.engine.response import decide
 from app.engine.risk import WEIGHTS, derive_tier, fuse
+from app.gateway.tokens import derive_scopes, issue, verify
 from app.main import app
 from app.models import (
     Approval,
@@ -497,29 +498,39 @@ def test_shrink_lifecycle_and_downgrade_stealth():
     store = get_store()
     clock = get_clock()
 
+    # Session starts with full scopes
+    contract = store.get_contract("procurement-agent")
+    token = issue(
+        agent_id="procurement-agent",
+        session_id="sess-shrink-1",
+        scopes=derive_scopes(contract) if contract else ["read", "write", "egress"],
+        act=None,
+    )
+    claims = verify(token)
     session = _make_dummy_session(session_id="sess-shrink-1", agent_id="procurement-agent")
+    session.token = token
+    session.current_jti = claims["jti"]
     store.save_session(session)
 
-    # Escalate session to SHRINK
-    new_token = apply_session_tier_actions(
+    # Escalate session to SHRINK (Task 0.a: SHRINK no longer reissues a token)
+    res_token = apply_session_tier_actions(
         session=session,
         prev_tier=Tier.ALLOW,
         new_tier=Tier.SHRINK,
         store=store,
     )
-    assert new_token is not None
+    assert res_token is None
     assert "write" in session.removed_scopes
     assert "egress" in session.removed_scopes
-    assert session.pending_new_token == new_token
+    assert session.pending_new_token is None
 
     with TestClient(app) as client:
-        # First call after shrink: returns new_token
         sigil = "test-sigil"
         session.sigil = sigil
         store.save_session(session)
 
         headers = {
-            "Authorization": f"Bearer {new_token}",
+            "Authorization": f"Bearer {token}",
             "X-Doppel-Sigil": sigil,
             "X-Runtime-Fingerprint": "fp-1",
         }

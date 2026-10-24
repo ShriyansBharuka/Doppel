@@ -15,10 +15,11 @@ from app.engine.response import decide
 from app.engine.risk import fuse
 from app.gateway.sigil import check
 from app.gateway.taint import mark_egress_attempt, update_taint
-from app.gateway.tokens import revoke, verify
+from app.gateway.tokens import derive_scopes, issue, revoke, verify
 from app.ids import new_id
 from app.models import Approval, Decision, Event, SessionState, SinkholeCapture
 from app.store import get_store
+from app.stream import get_broadcaster
 from app.world.egress import extract_host
 from app.world.executor import execute, resolve_execution_data_class
 from app.world.files import get_all_watermarks, get_decoy_mirror_content, get_file
@@ -43,7 +44,7 @@ def sinkhole_call(session: SessionState, tool: str, args: dict[str, Any], target
 
     all_wms = get_all_watermarks(get_settings().SCENARIO_SEED)
     matched = [(src, wm) for src, wm in all_wms.items() if wm in payload_str]
-    store.save_sinkhole_capture(SinkholeCapture(
+    capture = SinkholeCapture(
         capture_id=new_id(),
         session_id=session.session_id,
         agent_id=session.agent_id,
@@ -56,7 +57,9 @@ def sinkhole_call(session: SessionState, tool: str, args: dict[str, Any], target
         leaked_decoy=matched[0][0] if matched else None,
         watermark_detected=matched[0][1] if matched else None,
         timestamp=get_clock().now(),
-    ))
+    )
+    store.save_sinkhole_capture(capture)
+    get_broadcaster().broadcast_sync("sinkhole", capture.model_dump())
     # Same code path as a real success, so keys/shape can never drift apart
     return execute(tool=tool, args=args, session=session, record=False)
 
@@ -230,6 +233,7 @@ def handle_call(
                 tool_to_disable = eff.split(":", 1)[1]
                 logger.warning("Pipeline applying side-effect: disabling tool '%s'", tool_to_disable)
                 store.disable_tool(tool_to_disable)
+                get_broadcaster().broadcast_sync("tool_disabled", {"tool": tool_to_disable})
 
     # -------------------------------------------------------------
     # Step 4: Risk Fusion
@@ -277,7 +281,7 @@ def handle_call(
 
         if is_quarantined:
             logger.info("Serving quarantined placeholder for content '%s'", virtual_file.path)
-            result = "[quarantined by Doppel]"
+            result = "[content unavailable]"
         else:
             result = execute(tool=tool, args=args, session=session)
 
@@ -299,6 +303,7 @@ def handle_call(
             created_at=clock.now(),
         )
         store.save_approval(approval)
+        get_broadcaster().broadcast_sync("approval", approval.model_dump())
         result = None
         event.result = None
 
@@ -328,6 +333,7 @@ def handle_call(
     session.recent_call_timestamps.append(clock.now())
 
     store.save_event(event)
+    get_broadcaster().broadcast_sync("event", event.model_dump())
 
     # Sync Alert and Drift Receipt when tier >= WATCH (Task 5)
     sync_session_alert(session, contract, store, clock)
@@ -338,12 +344,25 @@ def handle_call(
     # The agent never sees decision, risk, tier or detector output;
     # a sinkholed or decoy call is indistinguishable from real success.
     # -------------------------------------------------------------
+    session.call_count += 1
+    routine_token: Optional[str] = None
+    if session.call_count % 10 == 0:
+        contract_obj = store.get_contract(session.agent_id)
+        scopes = (derive_scopes(contract_obj) if contract_obj else None) or claims.get("scopes", ["read"])
+        fresh_jti = new_id()
+        routine_token = issue(
+            agent_id=session.agent_id,
+            session_id=session.session_id,
+            scopes=scopes,
+            act=session.act,
+            jti=fresh_jti,
+        )
+        session.token = routine_token
+        session.current_jti = fresh_jti
+
     status = "pending_approval" if decision == Decision.hold else "ok"
-    returned_token = session.pending_new_token or reissued_token
+    returned_token = session.pending_new_token or routine_token
     session.pending_new_token = None
-    if returned_token and claims["jti"] != session.current_jti:
-        # Rotation delivered (SHRINK or restore): the presented token is now retired
-        revoke(claims["jti"])
     store.save_session(session)
 
     return {

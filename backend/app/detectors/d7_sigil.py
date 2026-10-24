@@ -14,14 +14,18 @@ class SigilDetector:
         purpose = ctx.event.purpose.strip()
 
         scores: list[tuple[float, str]] = []
+        flags: set[str] = set()
 
         if status == "wrong":
             scores.append((1.0, "Presented sigil does not match session canary token"))
+            flags.add("sigil_wrong")
         elif status == "missing":
             scores.append((0.9, "Missing X-Doppel-Sigil header on agent tool invocation"))
+            flags.add("sigil_missing")
 
         if not purpose:
             scores.append((0.3, "Tool invocation has empty or whitespace purpose"))
+            flags.add("purpose_empty")
 
         if not scores:
             return DetectorResult(
@@ -29,6 +33,7 @@ class SigilDetector:
                 score=0.0,
                 evidence=[],
                 tags=["OWASP:ASI03"],
+                flags=set(),
             )
 
         max_score, top_evidence = max(scores, key=lambda x: x[0])
@@ -37,4 +42,5 @@ class SigilDetector:
             score=max_score,
             evidence=[top_evidence],
             tags=["OWASP:ASI03"],
+            flags=flags,
         )

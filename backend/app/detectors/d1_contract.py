@@ -35,6 +35,7 @@ class ContractDetector:
             )
 
         scores: list[tuple[float, str]] = []
+        flags: set[str] = set()
 
         # 1. Tool check
         if ctx.event.tool not in contract.allowed_tools:
@@ -42,6 +43,8 @@ class ContractDetector:
                 1.0,
                 f"Tool '{ctx.event.tool}' is not in declared role contract allowed tools",
             ))
+            flags.add("contract_violation")
+            flags.add("tool_not_allowed")
 
         # 2. Data class check
         if ctx.event.data_class and ctx.event.data_class not in contract.allowed_data_classes:
@@ -49,6 +52,8 @@ class ContractDetector:
                 1.0,
                 f"Data class '{ctx.event.data_class}' is not in declared role contract allowed data classes",
             ))
+            flags.add("contract_violation")
+            flags.add("data_class_not_allowed")
 
         # 3. Egress host allowlist check
         if ctx.tool_spec and ctx.tool_spec.effect.value == "egress":
@@ -58,6 +63,8 @@ class ContractDetector:
                     0.9,
                     f"Egress host '{host}' is not on contract egress allowlist {contract.egress_allowlist}",
                 ))
+                flags.add("contract_violation")
+                flags.add("egress_unknown_host")
 
         # 4. Delegation target check
         if ctx.event.tool == "agent.delegate":
@@ -67,6 +74,8 @@ class ContractDetector:
                     0.9,
                     f"Delegation to '{target_agent}' not permitted by contract may_delegate_to {contract.may_delegate_to}",
                 ))
+                flags.add("contract_violation")
+                flags.add("delegate_not_allowed")
 
         # 5. Rate limit check (calls in last 60 seconds)
         now_dt = ctx.clock.now()
@@ -79,6 +88,8 @@ class ContractDetector:
                 0.5,
                 f"Rate limit exceeded: {len(recent_calls)} calls in last 60s (limit {contract.rate_limit_per_min})",
             ))
+            flags.add("contract_violation")
+            flags.add("rate_limit_exceeded")
 
         if not scores:
             return DetectorResult(
@@ -86,6 +97,7 @@ class ContractDetector:
                 score=0.0,
                 evidence=[],
                 tags=["OWASP:ASI03"],
+                flags=set(),
             )
 
         max_score, top_evidence = max(scores, key=lambda x: x[0])
@@ -94,4 +106,5 @@ class ContractDetector:
             score=max_score,
             evidence=[top_evidence],
             tags=["OWASP:ASI03"],
+            flags=flags,
         )
