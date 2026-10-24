@@ -1,0 +1,18 @@
+agent_id: email-triage-agent
+role: Email Triage Agent
+purpose: Read the shared inbox, summarise, route requests to other agents
+owner: ops-team@corp.example
+version: 1
+allowed_tools:
+- email.read
+- doc.read
+- agent.delegate
+allowed_data_classes:
+- email
+- supplier_data
+egress_allowlist: []
+may_delegate_to:
+- finance-agent
+- procurement-agent
+rate_limit_per_min: 30
+signature: f3ed3f2aa2529682fe17e50a0898eb4424fe0e390a1269b114ba25da74c0a0e2

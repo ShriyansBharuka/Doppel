@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic>=2
+pydantic-settings
+pyyaml
+pyjwt
+python-dotenv
+httpx
+pytest
+google-genai
+motor

@@ -1,0 +1,16 @@
+agent_id: finance-agent
+role: Finance Agent
+purpose: Process approved vendor payments
+owner: finance-team@corp.example
+version: 1
+allowed_tools:
+- payment.create
+- doc.read
+allowed_data_classes:
+- payments
+- purchase_requests
+egress_allowlist:
+- bank.corp.internal
+may_delegate_to: []
+rate_limit_per_min: 30
+signature: 8bc3ec10c996f412c49bffe0e3ae8c1eaabd6144bfc3425e0b5a19763489ce88

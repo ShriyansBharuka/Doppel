@@ -1,0 +1,21 @@
+agent_id: procurement-agent
+role: Procurement Agent
+purpose: Compare supplier prices and create purchase requests
+owner: procurement-team@corp.example
+version: 1
+allowed_tools:
+- doc.read
+- supplier_catalog.search
+- price.compare
+- purchase_request.create
+- currency.convert
+allowed_data_classes:
+- product_catalog
+- supplier_data
+- purchase_requests
+egress_allowlist:
+- erp.corp.internal
+- suppliers.approved.example
+may_delegate_to: []
+rate_limit_per_min: 30
+signature: 6d347b574494619dd8c83eedcbfbe7a1c42633777af71b4471ea129935bf7938
