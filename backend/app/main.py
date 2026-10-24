@@ -3,7 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.console_routes import router as console_router
@@ -102,6 +102,16 @@ def list_agents() -> list[dict[str, Any]]:
         }
         for c in contracts
     ]
+
+
+@app.get("/v1/agents/{id}/contract")
+def get_agent_contract(id: str) -> dict[str, Any]:
+    """Return active contract fields without signature so UI can quote clauses."""
+    store = get_store()
+    c = store.get_contract(id)
+    if not c:
+        raise HTTPException(status_code=404, detail=f"Contract for agent '{id}' not found")
+    return c.model_dump(exclude={"signature"})
 
 
 @app.get("/v1/world/files")

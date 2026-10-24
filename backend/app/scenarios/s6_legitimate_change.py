@@ -130,6 +130,7 @@ def run_s6(
         id="s6",
         name="Legitimate Evolution (Signed Change Ticket)",
         description="quote.request without change ticket triggers alert; contract v2 signed at runtime allows tool with risk < 30",
+        steps=steps,
         expected="Part A produces WATCH alert, Part B with signed contract v2 stays risk < 30 with no alert",
         passed=passed,
         alert_ids=alert_ids,

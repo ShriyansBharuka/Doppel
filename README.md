@@ -38,7 +38,7 @@ uvicorn app.main:app --reload --port 8000
    DOPPEL_SECRET=<generated_doppel_secret>
    JWT_SECRET=<generated_jwt_secret>
    GEMINI_API_KEY=<your_gemini_api_key>
-   GEMINI_MODEL=gemini-3.8-flash
+   GEMINI_MODEL=gemini-3.5-flash-lite
    CORS_ORIGINS=http://localhost:5173,https://your-frontend-deployment.vercel.app
    ```
 3. **Re-sign Role Contracts**:
@@ -52,6 +52,31 @@ uvicorn app.main:app --reload --port 8000
    - The server verifies contracts on boot and strictly refuses to start in `DOPPEL_ENV=prod` if either secret is missing or unset.
 5. **Keepalive Ping**:
    Configure `DOPPEL_HEALTH_URL` as a GitHub repository secret. The [.github/workflows/keepalive.yml](file:///e:/Projects/Decoy%20Djs%20round%200/.github/workflows/keepalive.yml) workflow will periodically ping `/health` every 10 minutes to prevent cold starts.
+
+---
+
+## Deploy frontend
+
+The console is a static Vite + React app in `frontend/`. Run it locally against the backend with:
+
+```powershell
+cd frontend
+npm install
+npm run dev        # http://localhost:5173, talks to http://localhost:8000 by default
+```
+
+To deploy it on Vercel:
+
+1. **Import the repo** in Vercel and set **Root Directory** to `frontend`.
+2. **Build settings**: Framework preset **Vite**, build command `npm run build`, output directory `dist`.
+3. **Environment variable**: `VITE_API_URL` = your Render backend URL, for example `https://doppel-api.onrender.com` (no trailing slash). It is read at build time, so redeploy after changing it.
+4. **Link previews**: keep **Enable access to System Environment Variables** switched on (Project → Settings → Environment Variables). The build uses `VERCEL_PROJECT_PRODUCTION_URL` to make the `og:image` URL absolute. To pin a custom domain instead, set `VITE_SITE_URL=https://your-domain`.
+5. **Allow the frontend on the backend**: add the Vercel URL to `CORS_ORIGINS` on Render, e.g. `CORS_ORIGINS=https://your-project.vercel.app`.
+
+`frontend/vercel.json` rewrites every path to `index.html`, so deep links such as `/case/<alert_id>` survive a reload. Real files in `public/` (`og.png`, `results.json`) are served first, because Vercel checks the filesystem before applying rewrites.
+
+**Publishing evaluation results**: the Results page reads `frontend/public/results.json`. Generate it with
+`python -m app.eval.run_eval --out ../frontend/public/results.json` from `backend/`, then commit and redeploy. Until that file exists the page says "evaluation pending".
 
 ---
 

@@ -850,3 +850,43 @@ def test_receipt_tie_prefers_latest_event_and_has_short_headline():
     assert receipt.headline_short == "Procurement Agent · Risk 100 · proven exfiltration · via acme_quote.pdf"
     assert len(receipt.headline_short) <= 90
     assert receipt.headline  # long headline kept
+
+
+def test_benign_live_quote_comparison_sequence_stays_below_15():
+    """Prompt 4c Task 5: A benign live-style sequence (read acme -> read globex -> purchase_request.create) stays below 15 at every step."""
+    from app.agents.scripted import ScriptedAgent
+    from app.scenarios.runner import reset_scenario_state
+
+    reset_scenario_state(seed=42)
+    agent = ScriptedAgent("procurement-agent")
+    agent.start()
+
+    agent.call(
+        tool="doc.read",
+        args={"path": "/procurement/suppliers/acme_quote.pdf"},
+        purpose="Reviewing Acme quote",
+    )
+    store = get_store()
+    ev1 = store.list_events(session_id=agent.session_id)[-1]
+    assert ev1.risk < 15, f"Step 1 risk {ev1.risk} >= 15"
+
+    agent.call(
+        tool="doc.read",
+        args={"path": "/procurement/suppliers/globex_quote.pdf"},
+        purpose="Reviewing Globex quote",
+    )
+    ev2 = store.list_events(session_id=agent.session_id)[-1]
+    assert ev2.risk < 15, f"Step 2 risk {ev2.risk} >= 15"
+
+    agent.call(
+        tool="purchase_request.create",
+        args={
+            "vendor": "Acme Industrial",
+            "items": ["10,000 units Industrial Fasteners"],
+            "amount": 4500.0,
+        },
+        purpose="Procurement of fasteners from lower quote",
+    )
+    ev3 = store.list_events(session_id=agent.session_id)[-1]
+    assert ev3.risk < 15, f"Step 3 risk {ev3.risk} >= 15"
+

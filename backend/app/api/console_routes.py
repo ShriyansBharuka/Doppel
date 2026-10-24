@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 import logging
+import re
 from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Query
 
@@ -17,7 +18,7 @@ from app.ids import new_id, set_seed
 from app.models import Alert, Approval, Decision, DriftReceipt, Event, SinkholeCapture, Tier
 from app.store import get_store
 from app.world.executor import execute
-from app.world.files import clear_dynamic_watermarks, init_world_files
+from app.world.files import clear_dynamic_watermarks, get_file, init_world_files
 from app.world.tools import get_tool, init_tools, pin_hashes
 
 logger = logging.getLogger(__name__)
@@ -335,6 +336,49 @@ def get_world_state() -> dict[str, Any]:
     }
 
 
+@router.get("/world/content")
+def get_world_content(path: str = Query(..., description="Virtual file path")) -> dict[str, Any]:
+    """Console-only endpoint returning file content with hidden text spans marked and watermarks masked."""
+    file_obj = get_file(path)
+    if not file_obj:
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    raw_content = file_obj.content
+
+    # Mask watermark values: any DPL-WM-[0-9A-Fa-f]{12} -> "DPL-WM-••••"
+    masked_content = re.sub(r"DPL-WM-[0-9A-Fa-f]{12}", "DPL-WM-••••", raw_content)
+
+    # Parse [hidden white text]...[/hidden] spans into segments: {text: str, hidden: bool}
+    hidden_pattern = re.compile(r"\[hidden white text\](.*?)\[/hidden\]", re.DOTALL | re.IGNORECASE)
+
+    segments: list[dict[str, Any]] = []
+    last_idx = 0
+    for match in hidden_pattern.finditer(masked_content):
+        start, end = match.span()
+        if start > last_idx:
+            segments.append({"text": masked_content[last_idx:start], "hidden": False})
+        segments.append({"text": match.group(1), "hidden": True})
+        last_idx = end
+
+    if last_idx < len(masked_content):
+        segments.append({"text": masked_content[last_idx:], "hidden": False})
+
+    if not segments:
+        segments = [{"text": "", "hidden": False}]
+
+    data_class_val = getattr(file_obj.data_class, "value", str(file_obj.data_class))
+    trust_val = getattr(file_obj.trust, "value", str(file_obj.trust))
+
+    return {
+        "path": file_obj.path,
+        "data_class": data_class_val,
+        "trust": trust_val,
+        "is_decoy": file_obj.is_decoy,
+        "segments": segments,
+        "content": masked_content,
+    }
+
+
 @router.post("/reset")
 def reset_state() -> dict[str, Any]:
     """Clear store, rebuild world, re-pin tool hashes, and reload verified contracts."""
@@ -366,11 +410,20 @@ def reset_state() -> dict[str, Any]:
 
 @router.get("/meta")
 def get_meta() -> dict[str, Any]:
-    """System metadata per Prompt 4b Task 5."""
-    from app.scenarios.s1l_replay import get_latest_recording_meta
+    """System metadata per Prompt 4b Task 5 and Prompt 4c Task 6."""
+    from app.scenarios.s1l_replay import RECORDINGS_DIR, get_latest_recording_meta
 
     settings = get_settings()
     rec_meta = get_latest_recording_meta()
+
+    campaign_data = None
+    campaign_file = RECORDINGS_DIR / "campaign.json"
+    if campaign_file.exists():
+        try:
+            with open(campaign_file, "r", encoding="utf-8") as f:
+                campaign_data = json.load(f)
+        except Exception:
+            pass
 
     scenarios = ["s1", "s2", "s3", "s4", "s5", "s6"]
     if rec_meta:
@@ -381,5 +434,6 @@ def get_meta() -> dict[str, Any]:
         "mode": settings.DOPPEL_ENV,
         "scenarios_available": scenarios,
         "live_recording": rec_meta,
+        "live_campaign": campaign_data,
     }
 

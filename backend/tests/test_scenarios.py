@@ -21,15 +21,24 @@ def test_scenario_s1_pdf_hijack():
     res = run_s1(reset=True, step_delay_ms=0)
     assert res.passed is True
     assert res.id == "s1"
-    assert len(res.steps) == 5
+    # Check pre-attack steps (1: products.csv, 2: price.compare, 3: acme read) must each stay < 15
+    for s in res.steps[:3]:
+        assert s.defender_view["risk"] < 15, f"Pre-attack step {s.step_number} ({s.tool}) risk={s.defender_view['risk']} >= 15"
 
     store = get_store()
     alerts = store.list_alerts()
     assert len(alerts) >= 1
-    receipt = alerts[0].receipt
+    receipt = alerts[-1].receipt
     assert receipt is not None
     assert receipt.root_cause is not None
     assert "acme_quote.pdf" in receipt.root_cause.source
+
+    # Check upload's top contributors: D5 (decoy/watermark), D4 (taint_flow), D1 (contract) — not D2 novelty
+    contributions_by_share = sorted(receipt.contributions, key=lambda c: c.share_pct, reverse=True)
+    top_3_detectors = [c.detector for c in contributions_by_share[:3]]
+    assert set(top_3_detectors) == {"decoy", "taint_flow", "contract"}
+    novelty_contrib = next((c for c in receipt.contributions if c.detector == "novelty"), None)
+    assert novelty_contrib is None or novelty_contrib.share_pct < 5.0
 
     captures = store.list_sinkhole_captures()
     assert len(captures) >= 1
@@ -62,6 +71,7 @@ def test_scenario_s4_agent_chain():
     res = run_s4(reset=True, step_delay_ms=0)
     assert res.passed is True
     assert res.id == "s4"
+    assert len(res.steps) == 3
 
     store = get_store()
     assert store.get_payments() == []
@@ -77,14 +87,12 @@ def test_scenario_s4_agent_chain():
 
 
 def test_scenario_s5_slow_drift():
-    """S5: params are FITTED from training days; CUSUM catches the drift; per-event detectors stay quiet before it.
-
-    Deliberately does not assert res.passed or an alarm-day window: those are measured outcomes, not targets.
-    """
+    """S5: CUSUM raises sustained alarm (>=3 days) between day 10 and 25; EWMA never sustains alarm."""
     from app.detectors.d6_drift_cusum import get_cusum_tracker
 
     res = run_s5(reset=True, step_delay_ms=0)
     assert res.id == "s5"
+    assert res.passed is True
 
     tracker = get_cusum_tracker("procurement-agent")
     assert tracker.h == pytest.approx(10 * tracker.kappa)  # h = 5·std, κ = 0.5·std from the same fit
@@ -106,6 +114,7 @@ def test_scenario_s6_legitimate_change():
     res = run_s6(reset=True, step_delay_ms=0)
     assert res.passed is True
     assert res.id == "s6"
+    assert len(res.steps) == 4
 
 
 def test_scenario_s1_idempotence_and_reset():

@@ -40,6 +40,8 @@ class BaselineEngine:
         self.peer_tool_counts: Counter[str] = Counter()
         self.frozen_anchors: dict[str, dict[str, float]] = {}
         self.quarantine: dict[str, dict[str, QuarantineCandidate]] = defaultdict(dict)
+        self.declared_tools: dict[str, set[str]] = defaultdict(set)
+        self.declared_transitions: dict[str, set[tuple[str, str]]] = defaultdict(set)
 
     def reset(self) -> None:
         """Reset all learned counts, anchors, and quarantine tables."""
@@ -49,6 +51,8 @@ class BaselineEngine:
         self.peer_tool_counts.clear()
         self.frozen_anchors.clear()
         self.quarantine.clear()
+        self.declared_tools.clear()
+        self.declared_transitions.clear()
 
     def train_sessions(
         self,
@@ -89,13 +93,12 @@ class BaselineEngine:
         new_tool: str,
         contract_tools: list[str],
     ) -> None:
-        """Mark new tool and its transitions to/from existing contract tools as declared-known and re-capture frozen anchor per SPEC §4.3."""
-        self.agent_tool_counts[agent_id][new_tool] += 15
-        self.peer_tool_counts[new_tool] += 15
+        """Mark new tool and its transitions with existing contract tools as declared-known and re-capture frozen anchor per SPEC §4.3."""
+        self.declared_tools[agent_id].add(new_tool)
         for t in contract_tools:
             if t != new_tool:
-                self.agent_transitions[agent_id][t][new_tool] += 10
-                self.agent_transitions[agent_id][new_tool][t] += 10
+                self.declared_transitions[agent_id].add((t, new_tool))
+                self.declared_transitions[agent_id].add((new_tool, t))
         self.capture_frozen_anchor(agent_id)
 
     # --- D2: Novelty Probabilities & Scoring ---
@@ -113,6 +116,8 @@ class BaselineEngine:
 
     def calculate_novelty_p(self, agent_id: str, tool: str) -> float:
         """Compute blended novelty probability: P = λ·P_agent(tool) + (1−λ)·P_peer(tool), λ = n/(n+50)."""
+        if tool in self.declared_tools.get(agent_id, set()) and self.agent_tool_counts.get(agent_id, {}).get(tool, 0) == 0:
+            return 0.25
         n = self.agent_session_counts[agent_id]
         lam = n / (n + 50) if n > 0 else 0.0
         p_ag = self.p_agent(agent_id, tool)
@@ -121,7 +126,10 @@ class BaselineEngine:
 
     def score_novelty(self, agent_id: str, tool: str) -> float:
         """Compute novelty anomaly score: clamp((−log2(P + 1e-6) − 2) / 10, 0, 1)."""
-        # If the tool is learned in baseline, calculate standard blended score
+        # Tools declared in newer signed contract are treated as known by D2 for that agent until real data accumulates
+        if tool in self.declared_tools.get(agent_id, set()) and self.agent_tool_counts.get(agent_id, {}).get(tool, 0) == 0:
+            return 0.0
+
         p = self.calculate_novelty_p(agent_id, tool)
         raw_score = (-math.log2(p + 1e-6) - 2.0) / 10.0
         return clamp(raw_score, 0.0, 1.0)
@@ -142,6 +150,11 @@ class BaselineEngine:
         P < 0.02 -> 0.5.
         Normal -> 0.0.
         """
+        # Transitions declared in newer signed contract are treated as known by D3 for that agent until real data accumulates
+        if (prev_tool, next_tool) in self.declared_transitions.get(agent_id, set()):
+            if self.agent_transitions.get(agent_id, {}).get(prev_tool, {}).get(next_tool, 0) == 0:
+                return 0.0
+
         trans_map = self.agent_transitions.get(agent_id, {}).get(prev_tool, Counter())
         total_transitions = sum(trans_map.values())
 
@@ -168,11 +181,17 @@ class BaselineEngine:
 
     def is_known_tool(self, agent_id: str, tool: str) -> bool:
         """Check if tool is part of the established agent baseline."""
-        return tool in self.agent_tool_counts.get(agent_id, Counter())
+        return (
+            tool in self.agent_tool_counts.get(agent_id, Counter())
+            or tool in self.declared_tools.get(agent_id, set())
+        )
 
     def is_known_transition(self, agent_id: str, prev_tool: str, next_tool: str) -> bool:
         """Check if transition is part of established agent baseline."""
-        return next_tool in self.agent_transitions.get(agent_id, {}).get(prev_tool, Counter())
+        return (
+            next_tool in self.agent_transitions.get(agent_id, {}).get(prev_tool, Counter())
+            or (prev_tool, next_tool) in self.declared_transitions.get(agent_id, set())
+        )
 
     def record_quarantine_observation(
         self,

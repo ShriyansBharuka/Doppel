@@ -2,11 +2,11 @@
 
 import logging
 import threading
+from uuid import uuid4
 from typing import Any, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
-from app.ids import new_id
 from app.scenarios.runner import (
     ScenarioResult,
     get_latest_s5_series,
@@ -132,7 +132,7 @@ def start_scenario_run(
 
     reset = req.reset if req else True
     step_delay_ms = req.step_delay_ms if req else 700
-    run_id = new_id()
+    run_id = uuid4().hex[:12]
 
     # Launch in background thread / task
     thread = threading.Thread(

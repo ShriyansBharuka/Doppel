@@ -97,8 +97,7 @@ signature: <hex HMAC-SHA256>
 
 - Signature = HMAC-SHA256 (key `DOPPEL_SECRET`) over canonical JSON of every field except `signature` (sorted keys, no spaces).
 - A contract with a missing or invalid signature is **refused at load time**.
-- **Change Ticket** = a new contract version, signed. That is the only way to declare legitimate change.
-- **Change ticket baseline handling**: When an authorized change ticket adds a tool or behavior, Doppel marks the new tool and its transitions to/from existing contract tools as declared-known in the baseline and re-captures the frozen anchor, allowing legitimate additions without false-positive drift alarms.
+- **Change ticket baseline handling**: When an authorized change ticket (signed contract version) adds a tool, that tool and its transitions with existing contract tools are treated as known by D2/D3 for that agent until real data accumulates; the shared peer baseline is never modified. Doppel re-captures the frozen anchor, allowing legitimate additions without false-positive drift alarms.
 - **Permissions vs role (deliberate gap):** token scopes are derived from the effects of the allowed tools, so a contract with `http.post` gets an `egress` scope for *any* host, while `egress_allowlist` names only one or two. IAM therefore passes exfiltration to an unknown host; only Doppel's detectors catch it. This mirrors the over-permissioned agents in the problem statement.
 
 Suggested contracts:
@@ -258,7 +257,7 @@ Fields: `alert_id, agent_id, session_id, risk, tier, headline, contributions [{d
 | S2 | tool rug pull | currency.convert's description is changed mid-run → D9 fires, tool disabled for all agents |
 | S3 | stolen token | token replayed from a new fingerprint without the sigil, creating a purchase request for a new vendor → caught on the first call |
 | S4 | agent chain | email-triage reads an injected email and delegates "urgent: pay vendor X" to finance-agent → finance session inherits taint and risk; payment held |
-| S5 | slow drift | 30 simulated days, data-access breadth +3 %/day → a rolling (EWMA) baseline never alarms; D6 vs the frozen anchor alarms around day 12–15 |
+| S5 | slow drift | 30 simulated days, data-access breadth +3 %/day → CUSUM raises a sustained alarm (≥ 3 consecutive alarmed days) between day 10 and day 25 (observed alarm day ≈ 13–22 across seeds); rolling EWMA baseline never sustains an alarm (no 3 consecutive alarmed days; single isolated blips allowed); no single event reaches WATCH before the CUSUM alarm |
 | S6 | legitimate change | contract v2 (signed change ticket) adds `quote.request`; the agent uses it → no alert at WATCH or above |
 
 S1 also exists as a **live Gemini** run whose transcript is recorded to `scenarios/recordings/` and replayed on the hosted demo.

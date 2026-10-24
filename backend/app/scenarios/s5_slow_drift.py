@@ -67,6 +67,19 @@ def _run_day(rng: random.Random, day: int, drift_p: float) -> tuple[dict[str, fl
     return {t: c / total for t, c in counts.items()}, max_risk, sample
 
 
+def _find_sustained_alarm_start(alarms: list[bool], min_consecutive: int = 3) -> Optional[int]:
+    """Return the 1-indexed day where a run of >= min_consecutive alarmed days begins, or None."""
+    consecutive = 0
+    for idx, alarmed in enumerate(alarms):
+        if alarmed:
+            consecutive += 1
+            if consecutive >= min_consecutive:
+                return (idx - min_consecutive + 1) + 1
+        else:
+            consecutive = 0
+    return None
+
+
 def run_s5(
     reset: bool = True,
     step_delay_ms: int = 700,
@@ -129,14 +142,25 @@ def run_s5(
 
     set_latest_s5_series(series)
 
-    # SPEC §10 claim, as written: D6 alarms, a rolling EWMA baseline never alarms, and (our addition)
-    # per-event detectors stay below WATCH until D6 alarms. The alarm day is reported, not enforced.
-    passed = alarm_day is not None and not any(e["ewma_alarm"] for e in series) and not watch_before_alarm
+    # SPEC §10 pass criteria:
+    # 1. CUSUM raises a SUSTAINED alarm (≥ 3 consecutive alarmed days) between day 10 and day 25
+    cusum_alarms = [e["cusum_alarm"] for e in series]
+    cusum_sustained_start = _find_sustained_alarm_start(cusum_alarms, 3)
+    cusum_sustained_ok = cusum_sustained_start is not None and (10 <= cusum_sustained_start <= 25)
+
+    # 2. EWMA never sustains an alarm (no 3 consecutive alarmed days; single isolated blips allowed)
+    ewma_alarms = [e["ewma_alarm"] for e in series]
+    ewma_sustained_start = _find_sustained_alarm_start(ewma_alarms, 3)
+    ewma_never_sustained = (ewma_sustained_start is None)
+
+    # 3. No single event reaches WATCH before the CUSUM alarm
+    passed = cusum_sustained_ok and ewma_never_sustained and not watch_before_alarm
 
     summary = (
         f"S5 Slow Drift: fitted μ0={cusum.mu0:.4f}, κ={cusum.kappa:.4f}, h={cusum.h:.4f} from {TRAINING_DAYS} training days. "
-        f"CUSUM alarm on day {alarm_day}. EWMA alarms: {sum(e['ewma_alarm'] for e in series)} "
-        f"(threshold {ewma_threshold:.4f}). Events ≥ WATCH before alarm: {watch_before_alarm}."
+        f"CUSUM first alarm day {alarm_day}, sustained (≥3 consecutive) start day {cusum_sustained_start}. "
+        f"EWMA alarms: {sum(ewma_alarms)} (sustained: {not ewma_never_sustained}, threshold {ewma_threshold:.4f}). "
+        f"Events ≥ WATCH before alarm: {watch_before_alarm}."
     )
 
     result = ScenarioResult(
@@ -144,7 +168,7 @@ def run_s5(
         name="Slow Drift (CUSUM vs EWMA Baseline)",
         description="20 benign training days fit CUSUM; then 30 days where 3%/day more sessions use the broadest in-contract flow",
         steps=steps,
-        expected="CUSUM (fitted) alarms; rolling EWMA never alarms; per-event detectors stay below WATCH until D6 alarms",
+        expected="CUSUM raises sustained alarm (≥ 3 consecutive days) between day 10 and 25; EWMA never sustains an alarm; per-event detectors stay below WATCH before CUSUM alarm",
         passed=passed,
         alert_ids=[],
         capture_ids=[],

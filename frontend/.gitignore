@@ -1,0 +1,5 @@
+# Working screenshots stay local; the final picks (<view>-1440.png / -1920.png / -390.png) are committed.
+screenshots/*
+!screenshots/*-1440.png
+!screenshots/*-1920.png
+!screenshots/*-390.png

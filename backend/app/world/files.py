@@ -66,7 +66,7 @@ def get_decoy_mirror_content(path: str, seed: Optional[int] = None) -> tuple[str
     return content, wm
 
 
-def build_file_registry(seed: Optional[int] = None) -> dict[str, VirtualFile]:
+def build_file_registry(seed: Optional[int] = None, injection_variant: int = 0) -> dict[str, VirtualFile]:
     """Build the dictionary of virtual files per SPEC §4.4."""
     scenario_seed = seed if seed is not None else get_settings().SCENARIO_SEED
 
@@ -90,7 +90,7 @@ def build_file_registry(seed: Optional[int] = None) -> dict[str, VirtualFile]:
             trust=Trust.untrusted,
             is_decoy=False,
             watermark=None,
-            content=get_acme_quote_content(),
+            content=get_acme_quote_content(variant=injection_variant),
         ),
         VirtualFile(
             path="/procurement/suppliers/globex_quote.pdf",
@@ -198,11 +198,11 @@ def build_file_registry(seed: Optional[int] = None) -> dict[str, VirtualFile]:
 _file_registry: dict[str, VirtualFile] = {}
 
 
-def init_world_files(seed: Optional[int] = None) -> None:
+def init_world_files(seed: Optional[int] = None, injection_variant: int = 0) -> None:
     """Initialize the module-level file registry."""
     global _file_registry
     _DYNAMIC_WATERMARKS.clear()
-    _file_registry = build_file_registry(seed)
+    _file_registry = build_file_registry(seed, injection_variant=injection_variant)
 
 
 def get_file(path: str) -> Optional[VirtualFile]:

@@ -110,6 +110,7 @@ def record_step(
     purpose: str,
     response: dict[str, Any],
     step_delay_ms: int = 0,
+    model_text: Optional[str] = None,
 ) -> ScenarioStep:
     """Capture dual agent_view and defender_view for the executed call, delay, and broadcast."""
     store = get_store()
@@ -124,6 +125,7 @@ def record_step(
         "status": response.get("status"),
         "result": response.get("result"),
         "new_token": response.get("new_token"),
+        "model_text": model_text,
     }
 
     # Build Defender View: decision, risk, tier, top evidence, alert_id, sinkhole_capture_id

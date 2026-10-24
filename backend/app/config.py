@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     STORAGE: str = "memory"
     MONGO_URI: str = ""
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     CORS_ORIGINS: str = "http://localhost:5173"
     SCENARIO_SEED: int = 42
 

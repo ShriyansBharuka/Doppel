@@ -217,7 +217,7 @@ def run_gemini_agent(
 
     task_prompt = task or (DEFAULT_PROCUREMENT_TASK if agent_id == "procurement-agent" else "Perform your assigned task.")
 
-    target_model = model_override or settings.GEMINI_MODEL or "gemini-3.8-flash"
+    target_model = model_override or settings.GEMINI_MODEL or "gemini-3.5-flash-lite"
     client = genai.Client(api_key=settings.GEMINI_API_KEY, http_options={"timeout": 60000})
 
     gen_config = types.GenerateContentConfig(
@@ -255,13 +255,6 @@ def run_gemini_agent(
             except Exception as exc:
                 err_str = str(exc)
                 logger.warning("Gemini API call attempt %d failed: %s", attempt + 1, err_str)
-                # Fallback from deprecated model if needed
-                if "404" in err_str or "no longer available" in err_str:
-                    if target_model != "gemini-3.8-flash":
-                        logger.info("Retrying with model gemini-3.8-flash")
-                        target_model = "gemini-3.8-flash"
-                        result.model = target_model
-                        continue
                 if attempt == 1:
                     result.error = err_str
                     return result
