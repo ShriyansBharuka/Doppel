@@ -87,7 +87,7 @@ role: Procurement Agent
 purpose: Compare supplier prices and create purchase requests
 owner: procurement-team@corp.example
 version: 1
-allowed_tools: [doc.read, supplier_catalog.search, price.compare, purchase_request.create, currency.convert]
+allowed_tools: [doc.read, supplier_catalog.search, price.compare, purchase_request.create, currency.convert, http.post]
 allowed_data_classes: [product_catalog, supplier_data, purchase_requests]
 egress_allowlist: [erp.corp.internal, suppliers.approved.example]
 may_delegate_to: []
@@ -98,10 +98,11 @@ signature: <hex HMAC-SHA256>
 - Signature = HMAC-SHA256 (key `DOPPEL_SECRET`) over canonical JSON of every field except `signature` (sorted keys, no spaces).
 - A contract with a missing or invalid signature is **refused at load time**.
 - **Change Ticket** = a new contract version, signed. That is the only way to declare legitimate change.
+- **Permissions vs role (deliberate gap):** token scopes are derived from the effects of the allowed tools, so a contract with `http.post` gets an `egress` scope for *any* host, while `egress_allowlist` names only one or two. IAM therefore passes exfiltration to an unknown host; only Doppel's detectors catch it. This mirrors the over-permissioned agents in the problem statement.
 
 Suggested contracts:
 - `email-triage-agent`: tools `email.read`, `doc.read`, `agent.delegate`; data `email`, `supplier_data`; egress none; may_delegate_to `[finance-agent, procurement-agent]`.
-- `finance-agent`: tools `payment.create`, `doc.read`; data `payments`, `purchase_requests`; egress `[bank.corp.internal]`; may_delegate_to `[]`.
+- `finance-agent`: tools `payment.create`, `doc.read`, `http.post`; data `payments`, `purchase_requests`; egress `[bank.corp.internal]`; may_delegate_to `[]`.
 
 ### 4.4 The simulated world
 
@@ -156,14 +157,14 @@ Egress destinations: internal/approved hosts (`erp.corp.internal`, `suppliers.ap
 - Body: `{session_id, tool, args, purpose}` (`purpose` = one line from the agent on why it's doing this)
 
 **Pipeline (synchronous, in this order):**
-1. Verify the token (signature, expiry, not revoked, session not frozen). Invalid → 401. A frozen session → 423.
+1. Verify the token (signature, expiry, not revoked, session not frozen). Invalid → 401. A frozen session → 423. Unknown tool → 400, disabled tool → 403, missing scope → 403. **Every rejection that has an identifiable session still persists an Event with `decision=block`**, so probing leaves a record.
 2. Build the `Event`.
 3. Run the detectors (Section 6).
 4. Risk fusion (Section 7) → event risk, session risk, tier.
 5. Decide the response (Section 8).
 6. Execute in the simulated world if allowed; otherwise hold, sinkhole or block. Update taint labels.
 7. Persist the event; create/update the alert and Drift Receipt when tier ≥ WATCH; broadcast on the WebSocket.
-8. Return `{decision, result, risk, tier, new_token?}`. **A sinkholed call returns a response identical in shape to a real success.**
+8. Return the **agent-facing response**: `{status: "ok" | "pending_approval", result, new_token?}`. The agent **never** sees decision, risk, tier or detector output; a sinkholed or decoy call is indistinguishable from a real success. The console sees everything through events, alerts and receipts.
 
 **Taint labels (per session):**
 - `UNTRUSTED_IN`: content from an untrusted source was read. Record a `TaintRef {content_id, source, sha256, ts}`.
@@ -179,8 +180,8 @@ Each returns `DetectorResult {name, score (0..1), evidence: list[str], tags: lis
 |---|---|---|
 | D1 | contract | tool not allowed → 1.0 · data class not allowed → 1.0 · egress host not on allowlist → 0.9 · delegate target not allowed → 0.9 · rate limit exceeded → 0.5. Score = max. |
 | D2 | novelty | `P = λ·P_agent(tool) + (1−λ)·P_peer(tool)`, `λ = n/(n+50)`; score = clamp((−log2(P + 1e-6) − 2) / 10, 0, 1). |
-| D3 | sequence | first-order Markov `P(tool_t | tool_t−1)` from the baseline; unseen transition → 0.8; P < 0.02 → 0.5. |
-| D4 | taint_flow | Rule of Two: UNTRUSTED_IN + SENSITIVE_READ → 0.3 · UNTRUSTED_IN + write/egress/delegate touching a sensitive class → 0.6 · UNTRUSTED_IN + SENSITIVE_READ + egress → 0.9. Evidence names the content. |
+| D3 | sequence | first-order Markov `P(tool_t | tool_t−1)` from the baseline; unseen transition where both tools are in contract and common (P ≥ 0.05) → 0.6; unseen transition involving an off-contract or rare tool → 0.8; P < 0.02 → 0.5. |
+| D4 | taint_flow | Rule of Two: UNTRUSTED_IN + SENSITIVE_READ → 0.3 · UNTRUSTED_IN + delegate → 0.3 (delegating is normal; the child inherits the taint) · UNTRUSTED_IN + write/egress touching a confidential/restricted class → 0.6 · UNTRUSTED_IN + SENSITIVE_READ + egress → 0.9. Score = max. Evidence names the content. |
 | D5 | decoy | touching any decoy file/tool/secret → 1.0 · watermark found in an egress body → 1.0 ("proven exfiltration"). |
 | D6 | drift_cusum | per agent per simulated day: `d_t` = Jensen-Shannon divergence of that day's tool distribution vs the **frozen anchor** distribution. `S_t = max(0, S_t−1 + d_t − μ0 − κ)`; alarm when `S_t > h`; score = min(1, S_t / h). `μ0` = mean divergence on training days, `κ = 0.5·std`, `h = 5·std`. |
 | D7 | sigil | missing → 0.9 · wrong → 1.0 · empty `purpose` → 0.3. |
@@ -201,16 +202,35 @@ Each returns `DetectorResult {name, score (0..1), evidence: list[str], tags: lis
 
 ## 8. Responses
 
-| Tier | What happens |
-|---|---|
-| ALLOW | Execute. |
-| WATCH | Non-sensitive reads execute. Egress, writes to confidential/restricted classes, payments and delegation are **held** for human approval (`approve` / `deny`). |
-| SHRINK | Re-issue the token without `write`, `egress` and `delegate` scopes (the old jti is revoked; the new token is returned in the response). Egress goes to the **sinkhole**. Allowed reads continue. |
-| ISOLATE | Revoke the token (jti deny-list), freeze the session (further calls → 423), send egress attempts to the sinkhole, apply inherited risk to descendant sessions, snapshot the session's events. |
+Two separate things happen: a **session-level action** when the session's tier rises, and a **per-call outcome** for the current action.
 
-- **Sinkhole**: a fake destination returning a realistic success (e.g. `{"status":"uploaded","id":"f_..."}`). The payload, destination and time go into the **evidence locker**. Any egress containing a watermark is sinkholed regardless of tier.
-- **Restore**: `POST /v1/sessions/{id}/restore` (human): clears the tier, issues a fresh token, blocklists the root-cause content hash.
+**Session-level actions (applied once, when the tier is reached):**
+
+| Tier | Session action |
+|---|---|
+| ALLOW | none |
+| WATCH | none (holds apply per call) |
+| SHRINK | Re-issue the token without `write`, `egress`, `delegate` scopes; old jti revoked; new token returned once in `new_token`. |
+| ISOLATE | Real scopes revoked; the session enters **decoy mode** ("mirror world"). Descendant sessions get inherited risk; the session's events are snapshotted for forensics. |
+
+**Per-call outcome** — `decide()` returns exactly one of `allow | hold | sinkhole | decoy | block`:
+
+| Situation | Outcome |
+|---|---|
+| ALLOW tier | allow |
+| WATCH tier: egress, delegation, payments, writes to confidential/restricted | hold (agent gets `pending_approval`) — everything else allow |
+| SHRINK tier: egress or delegation | sinkhole — reads of allowed classes allow |
+| ISOLATE tier (decoy mode): writes, egress, delegation | sinkhole (success-shaped reply, nothing reaches the world) |
+| ISOLATE tier: reads of confidential/restricted data | decoy (serve decoy content instead of the real data) |
+| Any tier: egress whose body contains a watermark | sinkhole |
+| Any tier: reading a decoy file/tool/secret | allow — **keep the trap open** so the attacker reveals the next step |
+
+- **Sinkhole**: a fake destination returning a realistic success (e.g. `{"status":"uploaded","id":"f_..."}`). The payload, destination, matched watermarks and time go into the **evidence locker** (`GET /v1/sinkhole`).
+- **Hold**: creates an Approval; `POST /v1/alerts/{id}/approve|deny` executes or drops the held call.
+- **Freeze** (human button): `POST /v1/sessions/{id}/freeze` → further calls return 423.
+- **Restore** (human): `POST /v1/sessions/{id}/restore` clears risk and tier, leaves decoy mode, issues a fresh token, blocklists the root-cause content hash.
 - **Tool integrity failure**: the tool is disabled for all agents until re-approved.
+- Session tier is always derived from session risk; it never decreases except through restore.
 
 ## 9. Drift Receipt (one per alert)
 
@@ -243,7 +263,7 @@ S1 also exists as a **live Gemini** run whose transcript is recorded to `scenari
 
 ## 11. Console API (built in later prompts)
 
-`GET /health` · `GET /v1/agents` · `GET /v1/agents/{id}` · `GET /v1/sessions/{id}` · `GET /v1/events?session_id=` · `GET /v1/alerts` · `GET /v1/alerts/{id}/receipt` · `POST /v1/alerts/{id}/approve|deny` · `POST /v1/sessions/{id}/restore` · `GET /v1/sinkhole` · `GET /v1/world/files` · `GET /v1/world/tools` · `POST /v1/scenarios/{id}/run` · `POST /v1/reset` · `WS /v1/stream`
+`GET /health` · `GET /v1/agents` · `GET /v1/agents/{id}` · `GET /v1/sessions/{id}` · `GET /v1/events?session_id=` · `GET /v1/alerts` · `GET /v1/alerts/{id}/receipt` · `POST /v1/alerts/{id}/approve|deny` · `POST /v1/sessions/{id}/restore` · `POST /v1/sessions/{id}/freeze` · `GET /v1/sinkhole` · `GET /v1/world/files` · `GET /v1/world/tools` · `POST /v1/scenarios/{id}/run` · `POST /v1/reset` · `WS /v1/stream`
 
 ## 12. Evaluation (built in a later prompt)
 

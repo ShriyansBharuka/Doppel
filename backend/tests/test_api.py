@@ -76,3 +76,49 @@ def test_world_tools_endpoint():
 
         for t in tools:
             assert len(t["schema_hash"]) == 64
+
+
+def test_session_freeze_and_restore():
+    """Verify POST /v1/sessions/{id}/freeze and POST /v1/sessions/{id}/restore."""
+    with TestClient(app) as client:
+        sess_res = client.post(
+            "/v1/sessions",
+            json={"agent_id": "procurement-agent", "runtime_fingerprint": "fp-freeze-test"},
+        )
+        assert sess_res.status_code == 200
+        sid = sess_res.json()["session_id"]
+        token = sess_res.json()["token"]
+        sigil = sess_res.json()["sigil"]
+
+        # Freeze session
+        freeze_res = client.post(f"/v1/sessions/{sid}/freeze")
+        assert freeze_res.status_code == 200
+        assert freeze_res.json()["status"] == "frozen"
+
+        # Subsequent call returns 423 and records block event
+        call_res = client.post(
+            "/v1/gateway/call",
+            headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": sigil},
+            json={"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}},
+        )
+        assert call_res.status_code == 423
+        evs = client.get(f"/v1/events?session_id={sid}").json()
+        assert len(evs) == 1
+        assert evs[0]["decision"] == "block"
+
+        # Restore session
+        restore_res = client.post(f"/v1/sessions/{sid}/restore")
+        assert restore_res.status_code == 200
+        assert restore_res.json()["status"] == "restored"
+        new_token = restore_res.json()["token"]
+        assert new_token != token
+
+        # Call with new token succeeds
+        call_ok = client.post(
+            "/v1/gateway/call",
+            headers={"Authorization": f"Bearer {new_token}", "X-Doppel-Sigil": sigil},
+            json={"session_id": sid, "tool": "doc.read", "args": {"path": "/procurement/catalog/products.csv"}},
+        )
+        assert call_ok.status_code == 200
+        assert call_ok.json()["status"] == "ok"
+

@@ -22,11 +22,41 @@ from app.world.content import (
 logger = logging.getLogger(__name__)
 
 
+_DYNAMIC_WATERMARKS: dict[str, str] = {}
+
+
 def generate_watermark(seed: int, path: str) -> str:
     """Generate deterministic decoy watermark DPL-WM- + 12 hex chars."""
     raw = f"{seed}:{path}".encode("utf-8")
     hex12 = hashlib.sha256(raw).hexdigest()[:12].upper()
     return f"DPL-WM-{hex12}"
+
+
+def get_all_watermarks(seed: Optional[int] = None) -> dict[str, str]:
+    """Return mapping of decoy target/source to its unique watermark (files + tools + mirror decoys)."""
+    scenario_seed = seed if seed is not None else get_settings().SCENARIO_SEED
+    mapping = {
+        "/hr/Salaries_FY26_FINAL.xlsx": generate_watermark(scenario_seed, "/hr/Salaries_FY26_FINAL.xlsx"),
+        "/finance/vendor_bank_master.csv": generate_watermark(scenario_seed, "/finance/vendor_bank_master.csv"),
+        "/vault/AWS_PROD_ROOT_KEY": generate_watermark(scenario_seed, "/vault/AWS_PROD_ROOT_KEY"),
+        "records.export_all": generate_watermark(scenario_seed, "records.export_all"),
+        "admin.override_limits": generate_watermark(scenario_seed, "admin.override_limits"),
+    }
+    mapping.update(_DYNAMIC_WATERMARKS)
+    return mapping
+
+
+def get_decoy_mirror_content(path: str, seed: Optional[int] = None) -> tuple[str, str]:
+    """Generate mirror decoy content with its own registered watermark for ISOLATE decoy mode."""
+    scenario_seed = seed if seed is not None else get_settings().SCENARIO_SEED
+    wm = generate_watermark(scenario_seed, f"mirror:{path}")
+    _DYNAMIC_WATERMARKS[path] = wm
+    content = (
+        f"[MIRROR DATA] Authorized Clone for {path}\n"
+        f"RESTRICTED AUDIT COPY · WATERMARK: {wm}\n"
+        f"Synthetic mirror records for forensic canary monitoring.\n"
+    )
+    return content, wm
 
 
 def build_file_registry(seed: Optional[int] = None) -> dict[str, VirtualFile]:
@@ -164,6 +194,7 @@ _file_registry: dict[str, VirtualFile] = {}
 def init_world_files(seed: Optional[int] = None) -> None:
     """Initialize the module-level file registry."""
     global _file_registry
+    _DYNAMIC_WATERMARKS.clear()
     _file_registry = build_file_registry(seed)
 
 

@@ -9,6 +9,7 @@ allowed_tools:
 - price.compare
 - purchase_request.create
 - currency.convert
+- http.post
 allowed_data_classes:
 - product_catalog
 - supplier_data
@@ -18,4 +19,4 @@ egress_allowlist:
 - suppliers.approved.example
 may_delegate_to: []
 rate_limit_per_min: 30
-signature: 6d347b574494619dd8c83eedcbfbe7a1c42633777af71b4471ea129935bf7938
+signature: 757d2424c46b79868539a51a5605168fb8d071a98e6b09cefed15fce24f2758a

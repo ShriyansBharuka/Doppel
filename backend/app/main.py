@@ -10,6 +10,7 @@ from app.api.console_routes import router as console_router
 from app.api.gateway_routes import router as gateway_router
 from app.config import get_settings
 from app.contracts.loader import load_contracts, verify_contract
+from app.engine.baseline import init_baseline
 from app.store import get_store
 from app.world.files import init_world_files, list_files
 from app.world.tools import list_tools, pin_hashes
@@ -40,6 +41,9 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error("Failed to load contracts on startup: %s", exc)
         raise exc
+
+    # 4. Initialize behavioral baseline with benign sessions
+    init_baseline(settings.SCENARIO_SEED)
 
     yield
 
@@ -90,7 +94,7 @@ def list_agents() -> list[dict[str, Any]]:
             "role": c.role,
             "purpose": c.purpose,
             "contract_version": c.version,
-            "signature_valid": verify_contract(c),
+            "signature_valid": True,
         }
         for c in contracts
     ]

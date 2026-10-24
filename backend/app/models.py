@@ -62,9 +62,10 @@ class Decision(str, Enum):
     """Gateway pipeline decision (SPEC §5, §8)."""
     allow = "allow"
     hold = "hold"
-    shrink = "shrink"
     sinkhole = "sinkhole"
+    decoy = "decoy"
     block = "block"
+    shrink = "shrink"
     isolate = "isolate"
 
 
@@ -127,6 +128,7 @@ class DetectorResult(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     evidence: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    side_effects: list[str] = Field(default_factory=list)
 
 
 class Event(BaseModel):
@@ -208,6 +210,11 @@ class SessionState(BaseModel):
     risk: int = Field(default=0, ge=0, le=100)
     tier: Tier = Tier.ALLOW
     frozen: bool = False
+    decoy_mode: bool = False
+    removed_scopes: list[str] = Field(default_factory=list)
+    snapshot_event_ids: list[str] = Field(default_factory=list)
+    alert_id: Optional[str] = None
+    pending_new_token: Optional[str] = None
     act: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -220,20 +227,28 @@ class SinkholeCapture(BaseModel):
     session_id: str
     agent_id: str
     tool: str
-    payload: Any
-    destination: str
-    timestamp: datetime
+    host: str = ""
+    destination: str = ""
+    payload: Any = None
+    bytes: int = 0
+    matched_watermarks: list[str] = Field(default_factory=list)
+    leaked_decoy: Optional[str] = None
     watermark_detected: Optional[str] = None
+    timestamp: datetime
 
 
 class Approval(BaseModel):
     """Pending or resolved human approval request (SPEC §8)."""
     approval_id: str
+    alert_id: Optional[str] = None
     session_id: str
     event_id: str
+    agent_id: str = ""
     tool: str
     args: dict[str, Any] = Field(default_factory=dict)
+    purpose: str = ""
     status: str = "pending"  # pending, approved, denied
+    note: Optional[str] = None
     created_at: datetime
     resolved_at: Optional[datetime] = None
 

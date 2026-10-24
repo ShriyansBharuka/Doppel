@@ -34,16 +34,22 @@ class Store(Protocol):
     # Alerts
     def save_alert(self, alert: Alert) -> None: ...
     def get_alert(self, alert_id: str) -> Optional[Alert]: ...
+    def get_session_alert(self, session_id: str) -> Optional[Alert]: ...
     def list_alerts(self, session_id: Optional[str] = None) -> list[Alert]: ...
 
     # Sinkhole captures
     def save_sinkhole_capture(self, capture: SinkholeCapture) -> None: ...
-    def list_sinkhole_captures(self) -> list[SinkholeCapture]: ...
+    def list_sinkhole_captures(self, session_id: Optional[str] = None) -> list[SinkholeCapture]: ...
 
     # Approvals
     def save_approval(self, approval: Approval) -> None: ...
     def get_approval(self, approval_id: str) -> Optional[Approval]: ...
-    def list_approvals(self, session_id: Optional[str] = None) -> list[Approval]: ...
+    def list_approvals(self, session_id: Optional[str] = None, status: Optional[str] = None) -> list[Approval]: ...
+
+    # Content hash blocklist (quarantine)
+    def blocklist_content_hash(self, sha256: str) -> None: ...
+    def is_content_hash_blocklisted(self, sha256: str) -> bool: ...
+    def get_blocklisted_content_hashes(self) -> set[str]: ...
 
     # Revoked JTIs
     def revoke_jti(self, jti: str) -> None: ...
@@ -82,6 +88,7 @@ class InMemoryStore:
         self._alerts: dict[str, Alert] = {}
         self._sinkhole_captures: list[SinkholeCapture] = []
         self._approvals: dict[str, Approval] = {}
+        self._blocklisted_content_hashes: set[str] = set()
         self._revoked_jtis: set[str] = set()
         self._disabled_tools: set[str] = set()
         self._pinned_tool_hashes: dict[str, str] = {}
@@ -127,6 +134,10 @@ class InMemoryStore:
     def get_alert(self, alert_id: str) -> Optional[Alert]:
         return self._alerts.get(alert_id)
 
+    def get_session_alert(self, session_id: str) -> Optional[Alert]:
+        alerts = self.list_alerts(session_id=session_id)
+        return alerts[0] if alerts else None
+
     def list_alerts(self, session_id: Optional[str] = None) -> list[Alert]:
         if session_id:
             return [a for a in self._alerts.values() if a.session_id == session_id]
@@ -136,7 +147,9 @@ class InMemoryStore:
     def save_sinkhole_capture(self, capture: SinkholeCapture) -> None:
         self._sinkhole_captures.append(capture)
 
-    def list_sinkhole_captures(self) -> list[SinkholeCapture]:
+    def list_sinkhole_captures(self, session_id: Optional[str] = None) -> list[SinkholeCapture]:
+        if session_id:
+            return [c for c in self._sinkhole_captures if c.session_id == session_id]
         return list(self._sinkhole_captures)
 
     # Approvals
@@ -146,10 +159,23 @@ class InMemoryStore:
     def get_approval(self, approval_id: str) -> Optional[Approval]:
         return self._approvals.get(approval_id)
 
-    def list_approvals(self, session_id: Optional[str] = None) -> list[Approval]:
+    def list_approvals(self, session_id: Optional[str] = None, status: Optional[str] = None) -> list[Approval]:
+        approvals = list(self._approvals.values())
         if session_id:
-            return [a for a in self._approvals.values() if a.session_id == session_id]
-        return list(self._approvals.values())
+            approvals = [a for a in approvals if a.session_id == session_id]
+        if status:
+            approvals = [a for a in approvals if a.status == status]
+        return approvals
+
+    # Content hash blocklist (quarantine)
+    def blocklist_content_hash(self, sha256: str) -> None:
+        self._blocklisted_content_hashes.add(sha256)
+
+    def is_content_hash_blocklisted(self, sha256: str) -> bool:
+        return sha256 in self._blocklisted_content_hashes
+
+    def get_blocklisted_content_hashes(self) -> set[str]:
+        return set(self._blocklisted_content_hashes)
 
     # Revoked JTIs
     def revoke_jti(self, jti: str) -> None:
@@ -206,6 +232,7 @@ class InMemoryStore:
         self._alerts.clear()
         self._sinkhole_captures.clear()
         self._approvals.clear()
+        self._blocklisted_content_hashes.clear()
         self._revoked_jtis.clear()
         self._disabled_tools.clear()
         self._pinned_tool_hashes.clear()

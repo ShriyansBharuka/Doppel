@@ -218,3 +218,15 @@ def verify(tool_name: str, store: Optional[Store] = None) -> bool:
         return False
     current_hash = compute_schema_hash(tool.name, tool.description, tool.params)
     return current_hash == pinned_hash
+
+
+def tamper(name: str, new_description: str) -> None:
+    """Tamper with a live tool's description in memory without updating the pinned hash."""
+    tools = get_tools_registry()
+    if name not in tools:
+        raise ValueError(f"Tool {name} not found in tools registry")
+    tool = tools[name]
+    tool.description = new_description
+    tool.schema_hash = compute_schema_hash(tool.name, new_description, tool.params)
+    logger.warning("Tampered with live tool %s description: %s", name, new_description[:40])
+

@@ -113,7 +113,7 @@ def test_procurement_reads_clean_products_csv():
         )
         assert call_res.status_code == 200
         call_data = call_res.json()
-        assert call_data["decision"] == "allow"
+        assert call_data["status"] == "ok"
         assert "SKU-001" in call_data["result"]
 
         # Check recorded event
@@ -297,6 +297,12 @@ def test_token_without_egress_scope_calling_http_post_rejected_with_403():
         assert call_res.status_code == 403
         assert "Scope 'egress' not granted" in call_res.json()["detail"]
 
+        # SPEC §5: every rejection with identifiable session persists an Event with decision=block
+        evs = client.get(f"/v1/events?session_id={session_id}").json()
+        assert len(evs) == 1
+        assert evs[0]["decision"] == "block"
+        assert evs[0]["tool"] == "http.post"
+
 
 def test_delegation_message_queued_and_child_session_inherits_taint_and_act():
     """Delegation queues message; child session inherits parent's taint labels and delegation chain."""
@@ -315,7 +321,7 @@ def test_delegation_message_queued_and_child_session_inherits_taint_and_act():
         client.post(
             "/v1/gateway/call",
             headers={"Authorization": f"Bearer {triage_token}", "X-Doppel-Sigil": triage_sigil},
-            json={"session_id": triage_sid, "tool": "email.read", "args": {"message_id": "msg_1042"}},
+            json={"session_id": triage_sid, "tool": "email.read", "purpose": "Reading incoming email", "args": {"message_id": "msg_1042"}},
         )
 
         # Delegate to finance-agent
@@ -326,6 +332,7 @@ def test_delegation_message_queued_and_child_session_inherits_taint_and_act():
             json={
                 "session_id": triage_sid,
                 "tool": "agent.delegate",
+                "purpose": "Routing invoice notification to finance agent",
                 "args": {"target_agent": "finance-agent", "instruction": instruction_text},
             },
         )
@@ -460,7 +467,9 @@ def test_egress_taint_set_even_when_not_executed(monkeypatch):
             headers={"Authorization": f"Bearer {token}", "X-Doppel-Sigil": data["sigil"]},
             json={"session_id": data["session_id"], "tool": "http.post", "args": {"url": "https://files-share.xyz/u", "body": "x"}},
         )
-        assert res.json()["decision"] == "hold"
+        assert res.json()["status"] == "pending_approval"
+        evs = client.get(f"/v1/events?session_id={data['session_id']}").json()
+        assert evs[0]["decision"] == "hold"
         store = get_store()
         assert TaintLabel.EGRESS in store.get_session(data["session_id"]).taint_labels
         assert store.get_egress_logs() == []
