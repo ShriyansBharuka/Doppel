@@ -2,7 +2,9 @@
 
 import { weightiestEvidence } from "./vocab";
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+export const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000")
+  .replace(/\/$/, "")
+  .replace(/\/health$/, "");
 export const WS_URL = API_URL.replace(/^http/, "ws") + "/v1/stream";
 
 export type Tier = "ALLOW" | "WATCH" | "SHRINK" | "ISOLATE";
