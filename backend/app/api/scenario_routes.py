@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.scenarios.runner import (
     ScenarioResult,
+    get_latest_s5_data,
     get_latest_s5_series,
     get_scenario_run,
     save_scenario_run,
@@ -105,10 +106,11 @@ def list_scenarios() -> list[dict[str, str]]:
     items = list(SCENARIOS_META)
     rec_meta = get_latest_recording_meta()
     if rec_meta:
+        cfg_suffix = " (agent configured to follow supplier instructions)" if rec_meta.get("agent_config") == "follows-supplier-instructions" else ""
         items.append({
             "id": "s1l",
             "name": "Live Gemini Replay",
-            "description": f"recorded from a live {rec_meta['model']} run on {rec_meta['date']}",
+            "description": f"recorded from a live {rec_meta['model']} run on {rec_meta['date']}{cfg_suffix}",
             "expected_outcome": "Deterministic replay of live Gemini agent through gateway",
         })
     else:
@@ -159,6 +161,6 @@ def get_run_status(run_id: str) -> ScenarioResult:
 
 
 @router.get("/s5/series")
-def get_s5_drift_series() -> list[dict[str, Any]]:
-    """Return the 30-day CUSUM and EWMA series from the latest S5 drift simulation."""
-    return get_latest_s5_series()
+def get_s5_drift_series() -> dict[str, Any]:
+    """Return the 30-day CUSUM and EWMA series with top-level h and ewma_threshold from latest S5 drift simulation."""
+    return get_latest_s5_data()

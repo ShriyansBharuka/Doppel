@@ -133,6 +133,7 @@ def run_s5(
             "cusum_alarm": cusum.is_alarm(),
             "ewma_score": round(d_ewma, 4),
             "ewma_alarm": d_ewma > ewma_threshold,
+            "ewma_threshold": round(ewma_threshold, 4),
             "max_event_risk_without_d6": max_risk,
         })
         if day in (1, 5, 10, 13, 20, 30) and sample:
@@ -140,7 +141,11 @@ def run_s5(
             steps.append(record_step("s5", step_idx, agent, tool, args, purpose, resp, step_delay_ms))
             step_idx += 1
 
-    set_latest_s5_series(series)
+    set_latest_s5_series(
+        series,
+        h=round(cusum.h, 4),
+        ewma_threshold=round(ewma_threshold, 4),
+    )
 
     # SPEC §10 pass criteria:
     # 1. CUSUM raises a SUSTAINED alarm (≥ 3 consecutive alarmed days) between day 10 and day 25

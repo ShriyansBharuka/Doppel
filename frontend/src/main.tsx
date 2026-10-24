@@ -8,9 +8,11 @@ import Console from "./pages/Console";
 import TwoViews from "./pages/TwoViews";
 import CaseFile from "./pages/CaseFile";
 import Locker from "./pages/Locker";
-// Recharts is only needed here; keep it out of the first load.
+// The two chart pages load Recharts; keep it out of the first load.
 const Drift = lazy(() => import("./pages/Drift"));
-import Results from "./pages/Results";
+const Results = lazy(() => import("./pages/Results"));
+
+const opening = (what: string) => <p className="p-10 text-center text-bone-dim italic">Opening the {what}…</p>;
 
 const TITLES: [RegExp, string][] = [
   [/^\/console/, "Console"],
@@ -44,12 +46,19 @@ createRoot(document.getElementById("root")!).render(
           <Route
             path="/drift"
             element={
-              <Suspense fallback={<p className="p-10 text-center text-bone-dim italic">Opening the drift file…</p>}>
+              <Suspense fallback={opening("drift file")}>
                 <Drift />
               </Suspense>
             }
           />
-          <Route path="/results" element={<Results />} />
+          <Route
+            path="/results"
+            element={
+              <Suspense fallback={opening("verdict")}>
+                <Results />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Landing />} />
         </Routes>
       </Waking>

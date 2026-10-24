@@ -1,6 +1,7 @@
 """Console management and inspection API routes per SPEC §8, §9, §11."""
 
 from datetime import timedelta
+import json
 import logging
 import re
 from typing import Any, Optional
@@ -422,8 +423,8 @@ def get_meta() -> dict[str, Any]:
         try:
             with open(campaign_file, "r", encoding="utf-8") as f:
                 campaign_data = json.load(f)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to load campaign.json: %s", exc)
 
     scenarios = ["s1", "s2", "s3", "s4", "s5", "s6"]
     if rec_meta:
@@ -435,5 +436,6 @@ def get_meta() -> dict[str, Any]:
         "scenarios_available": scenarios,
         "live_recording": rec_meta,
         "live_campaign": campaign_data,
+        "agent_config": rec_meta.get("agent_config", "default") if rec_meta else "default",
     }
 

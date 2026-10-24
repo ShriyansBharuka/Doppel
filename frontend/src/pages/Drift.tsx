@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api, type S5Day } from "../api";
+import { api, type S5Data, type S5Day } from "../api";
 import { useStream } from "../useStream";
 import { Header } from "../components/Header";
 import { Button, Label, SectionHead } from "../components/ui";
@@ -37,6 +37,9 @@ function sustainedRuns(series: S5Day[]): [number, number][] {
   });
   return runs;
 }
+
+/** Y-axis top that always leaves the threshold line on the chart (Recharts drops reference lines outside the domain). */
+const withRoom = (threshold?: number) => (dataMax: number) => Math.max(dataMax, (threshold ?? 0) * 1.15);
 
 const axis = { stroke: "var(--color-line-hi)", tick: { fill: INK, fontSize: 12, fontFamily: "JetBrains Mono" } };
 
@@ -69,11 +72,12 @@ function ChartCard({ title, plain, children }: { title: string; plain: string; c
 }
 
 export default function Drift() {
-  const [series, setSeries] = useState<S5Day[] | null>(null);
+  const [data, setData] = useState<S5Data | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const series = data?.series ?? null;
 
-  const load = useCallback(() => api.s5Series().then(setSeries, (e) => setError(e.message)), []);
+  const load = useCallback(() => api.s5Series().then(setData, (e) => setError(e.message)), []);
   useEffect(() => {
     load();
   }, [load]);
@@ -96,10 +100,9 @@ export default function Drift() {
 
   const alarmDay = series?.find((d) => d.cusum_alarm)?.day;
   const runs = series ? sustainedRuns(series) : [];
-  const h = series?.[0]?.h;
-  const ewmaThreshold = series?.[0]?.ewma_threshold;
+  const h = data?.h;
+  const ewmaThreshold = data?.ewma_threshold;
   const busiest = series ? Math.max(...series.map((d) => d.max_event_risk_without_d6)) : 0;
-  const ewmaAlarmDays = series?.filter((d) => d.ewma_alarm).length ?? 0;
 
   return (
     <div className="min-h-screen">
@@ -157,9 +160,9 @@ export default function Drift() {
                       <ReferenceArea key={a} x1={a} x2={b} fill={ALARM} fillOpacity={0.14} label={{ value: "sustained alarm", fill: INK, fontSize: 12, position: "insideTop" }} />
                     ))}
                     <XAxis dataKey="day" {...axis} tickLine={false} />
-                    <YAxis {...axis} tickLine={false} width={56} tickFormatter={(v: number) => v.toFixed(2)} />
+                    <YAxis {...axis} tickLine={false} width={56} tickFormatter={(v: number) => v.toFixed(2)} domain={[0, withRoom(h)]} />
                     {h !== undefined && (
-                      <ReferenceLine y={h} stroke="var(--color-bone)" strokeDasharray="6 5" label={{ value: "h", fill: "var(--color-bone)", position: "right", fontSize: 13 }} />
+                      <ReferenceLine y={h} stroke="var(--color-bone)" strokeDasharray="6 5" label={{ value: `h = ${h.toFixed(3)}`, fill: "var(--color-bone)", position: "insideTopLeft", fontSize: 13 }} />
                     )}
                     {alarmDay && <ReferenceLine x={alarmDay} stroke={ALARM} strokeWidth={2} />}
                     <Tooltip content={<DayTooltip />} cursor={{ stroke: "var(--color-bone-dim)", strokeWidth: 1 }} />
@@ -170,40 +173,20 @@ export default function Drift() {
 
               <ChartCard
                 title="EWMA, the rolling baseline"
-                plain="The usual approach: compare each day to a moving average. It drifts along with the agent, so it never sounds a sustained alarm."
+                plain="The usual approach: compare each day to a moving average, alarming above the training days’ mean + 3σ. The average drifts along with the agent, so it never sounds a sustained alarm."
               >
                 <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={series} syncId="drift" margin={{ top: 16, right: 24, bottom: 4, left: 4 }}>
                     <CartesianGrid stroke="var(--color-line)" vertical={false} />
                     <XAxis dataKey="day" {...axis} tickLine={false} label={{ value: "simulated day", fill: INK, fontSize: 12, position: "insideBottomRight", offset: -2 }} />
-                    <YAxis {...axis} tickLine={false} width={56} tickFormatter={(v: number) => v.toFixed(3)} />
+                    <YAxis {...axis} tickLine={false} width={56} tickFormatter={(v: number) => v.toFixed(3)} domain={[0, withRoom(ewmaThreshold)]} />
                     {ewmaThreshold !== undefined && (
-                      <ReferenceLine y={ewmaThreshold} stroke="var(--color-bone)" strokeDasharray="6 5" label={{ value: "threshold", fill: "var(--color-bone)", position: "right", fontSize: 13 }} />
+                      <ReferenceLine y={ewmaThreshold} stroke="var(--color-bone)" strokeDasharray="6 5" label={{ value: `EWMA threshold = ${ewmaThreshold.toFixed(4)}`, fill: "var(--color-bone)", position: "insideTopLeft", fontSize: 13 }} />
                     )}
                     <Tooltip content={<DayTooltip />} cursor={{ stroke: "var(--color-bone-dim)", strokeWidth: 1 }} />
-                    <Line
-                      type="linear"
-                      dataKey="ewma_score"
-                      stroke={EWMA}
-                      strokeWidth={2}
-                      isAnimationActive={false}
-                      activeDot={{ r: 5 }}
-                      dot={(p: { cx?: number; cy?: number; payload?: S5Day; index?: number }) =>
-                        p.payload?.ewma_alarm ? (
-                          <circle key={p.index} cx={p.cx} cy={p.cy} r={5} fill={ALARM} stroke="var(--color-desk)" strokeWidth={2} />
-                        ) : (
-                          <g key={p.index} />
-                        )
-                      }
-                    />
+                    <Line type="linear" dataKey="ewma_score" stroke={EWMA} strokeWidth={2} dot={false} activeDot={{ r: 5 }} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
-                {ewmaThreshold === undefined && (
-                  <p className="mt-1 text-[13px] text-bone-dim italic">
-                    The backend doesn’t report the EWMA threshold yet, so days over it are marked with a red dot instead of a line
-                    {ewmaAlarmDays ? ` (${ewmaAlarmDays} in this run)` : " — none in this run"}.
-                  </p>
-                )}
               </ChartCard>
             </div>
 

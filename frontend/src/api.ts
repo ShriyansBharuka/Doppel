@@ -210,25 +210,76 @@ export interface Meta {
   mode: string;
   scenarios_available: string[];
   /** followed_injection is the string "True" / "False". */
-  live_recording: { model: string; date: string; followed_injection?: string } | null;
-  live_campaign?: Campaign | null;
+  live_recording: { model: string; date: string; followed_injection: string; agent_config: string } | null;
+  live_campaign: Campaign | null;
+  agent_config: string;
 }
 
-/** recordings/campaign.json, written by backend/app/agents/run_live.py. */
-export interface Campaign {
-  model: string;
-  date: string;
+interface CampaignCounts {
   runs: number;
   followed: number;
   caught_of_followed: number;
   false_alarms_on_resisted: number;
 }
 
+/** One (model, injection variant, agent config) cell of the live campaign. */
+export interface CampaignEntry extends CampaignCounts {
+  model: string;
+  variant: number;
+  agent_config: string;
+}
+
+/** recordings/campaign.json, written by backend/app/agents/run_live.py. */
+export interface Campaign {
+  date: string;
+  entries: CampaignEntry[];
+  total: CampaignCounts;
+}
+
 /** frontend/public/results.json — the output of backend/app/eval/run_eval.py --out. */
+type TierCounts = { WATCH: number; SHRINK: number; ISOLATE: number };
+
+interface BenignSlice {
+  total_sessions: number;
+  false_alarms: number;
+  false_alarms_per_100: number;
+  by_tier: TierCounts;
+  by_tier_per_100: TierCounts;
+}
+
+export interface LearningBlock {
+  block: number;
+  range: string;
+  sessions: number;
+  false_alarms: number;
+  fa_per_100: number;
+}
+
 export interface EvalResults {
   benchmark: string;
   environment: string;
-  benign: { total_benign_sessions: number; false_alarms: number; false_alarms_per_100: number };
+  /** Headline numbers are the perturbed (realistic-noise) run; `unperturbed` is the clean comparison. */
+  benign: {
+    total_benign_sessions: number;
+    false_alarms: number;
+    false_alarms_per_100: number;
+    by_tier: TierCounts;
+    by_tier_per_100: TierCounts;
+    held_actions: { count: number; total_calls: number; pct_of_all_calls: number };
+    unperturbed: BenignSlice;
+    perturbed: BenignSlice;
+    learning_curve: {
+      first_half_fa_count: number;
+      first_half_sessions: number;
+      first_half_fa_per_100: number;
+      second_half_fa_count: number;
+      second_half_sessions: number;
+      second_half_fa_per_100: number;
+      blocks_of_25: LearningBlock[];
+    };
+    /** Free text written by run_eval.py, not a per-detector measurement. */
+    trigger_analysis: string;
+  };
   attacks: {
     families: Record<
       string,
@@ -305,9 +356,8 @@ export interface ScenarioStep {
   tool: string;
   args: Record<string, unknown>;
   purpose: string;
-  /** S1L only, once the backend forwards the recording's model_text. */
-  model_text?: string | null;
-  agent_view: { status?: string; result?: unknown; new_token?: string | null };
+  /** model_text: what the live model said before this call (S1L replays only). */
+  agent_view: { status?: string; result?: unknown; new_token?: string | null; model_text?: string | null };
   defender_view: {
     decision: Decision | "unknown";
     risk: number;
@@ -341,9 +391,15 @@ export interface S5Day {
   cusum_alarm: boolean;
   ewma_score: number;
   ewma_alarm: boolean;
-  /** Not sent by the backend yet; the chart draws the EWMA threshold only when present. */
-  ewma_threshold?: number;
+  ewma_threshold: number;
   max_event_risk_without_d6: number;
+}
+
+/** GET /v1/scenarios/s5/series — thresholds fitted on the training days, plus the 30 monitored days. */
+export interface S5Data {
+  h: number;
+  ewma_threshold: number;
+  series: S5Day[];
 }
 
 export class ApiError extends Error {
@@ -421,7 +477,7 @@ export const api = {
     }),
   /** 404 while the run is still in progress. */
   scenarioRun: (runId: string) => req<ScenarioResult>(`/v1/scenarios/runs/${e(runId)}`),
-  s5Series: () => req<S5Day[]>("/v1/scenarios/s5/series"),
+  s5Series: () => req<S5Data>("/v1/scenarios/s5/series"),
 
   reset: () => post<{ status: string; contracts_loaded: number; tools_pinned: number }>("/v1/reset"),
 };

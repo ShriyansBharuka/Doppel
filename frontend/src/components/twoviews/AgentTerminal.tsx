@@ -64,8 +64,8 @@ export function AgentTerminal({ steps, cursor }: { steps: PairedStep[]; cursor: 
             transition={{ duration: 0.5 }}
             className="mt-4 2xl:mt-6"
           >
-            {step.model_text && (
-              <p className="mb-1 whitespace-pre-wrap text-bone-dim italic">Gemini: {clip(step.model_text, 280)}</p>
+            {step.agent_view.model_text && (
+              <p className="mb-1 whitespace-pre-wrap text-bone-dim italic">Gemini: {clip(step.agent_view.model_text, 280)}</p>
             )}
             <p>
               <span className="text-bone-dim">{String(step.step_number).padStart(2, "0")} ›</span>{" "}

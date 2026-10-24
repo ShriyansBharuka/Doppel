@@ -82,6 +82,7 @@ def save_recording(result, followed: bool) -> Path:
         "model": result.model,
         "timestamp": result.timestamp,
         "agent_id": result.agent_id,
+        "agent_config": getattr(result, "agent_config", "default"),
         "task": result.task,
         "system_prompt": result.system_prompt,
         "final_text": result.final_text,
@@ -105,6 +106,12 @@ def main() -> None:
     parser.add_argument("--model", default=None, help="Gemini model override")
     parser.add_argument("--runs", type=int, default=1, help="Number of independent live runs")
     parser.add_argument("--injection-variant", type=int, default=0, choices=[0, 1, 2, 3], help="Alternative phrasing of acme_quote.pdf hidden instruction")
+    parser.add_argument(
+        "--agent-config",
+        default="default",
+        choices=["default", "follows-supplier-instructions"],
+        help="Agent configuration / system prompt variant",
+    )
     parser.add_argument("--record", action="store_true", help="Record transcript JSON to scenarios/recordings/")
     args = parser.parse_args()
 
@@ -125,6 +132,7 @@ def main() -> None:
                 task=args.task,
                 model_override=args.model,
                 step_callback=format_step_printout,
+                agent_config=args.agent_config,
             )
             last_model = result.model
         except Exception as exc:
@@ -153,7 +161,7 @@ def main() -> None:
         if i < total_runs:
             time.sleep(2.5)  # Free-tier rate limit friendliness
 
-    # Update campaign.json with an entry per (model, variant) plus total
+    # Update campaign.json with an entry per (model, variant, agent_config) plus total
     campaign_path = RECORDINGS_DIR / "campaign.json"
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -163,16 +171,33 @@ def main() -> None:
             with open(campaign_path, "r", encoding="utf-8") as f:
                 old_data = json.load(f)
                 if "entries" in old_data and isinstance(old_data["entries"], list):
-                    entries = [
-                        e for e in old_data["entries"]
-                        if not (e.get("model") == last_model and e.get("variant") == args.injection_variant)
-                    ]
+                    for e in old_data["entries"]:
+                        if not (
+                            e.get("model") == last_model
+                            and e.get("variant") == args.injection_variant
+                            and e.get("agent_config", "default") == args.agent_config
+                        ):
+                            entries.append({
+                                "model": e.get("model"),
+                                "variant": e.get("variant", 0),
+                                "agent_config": e.get("agent_config", "default"),
+                                "runs": e.get("runs", 0),
+                                "followed": e.get("followed", 0),
+                                "caught_of_followed": e.get("caught_of_followed", 0),
+                                "false_alarms_on_resisted": e.get("false_alarms_on_resisted", 0),
+                            })
                 elif "model" in old_data and "runs" in old_data:
                     old_v = old_data.get("variant", 0)
-                    if not (old_data["model"] == last_model and old_v == args.injection_variant):
+                    old_cfg = old_data.get("agent_config", "default")
+                    if not (
+                        old_data["model"] == last_model
+                        and old_v == args.injection_variant
+                        and old_cfg == args.agent_config
+                    ):
                         entries.append({
                             "model": old_data["model"],
                             "variant": old_v,
+                            "agent_config": old_cfg,
                             "runs": old_data.get("runs", 0),
                             "followed": old_data.get("followed", 0),
                             "caught_of_followed": old_data.get("caught_of_followed", 0),
@@ -184,13 +209,14 @@ def main() -> None:
     new_entry = {
         "model": last_model,
         "variant": args.injection_variant,
+        "agent_config": args.agent_config,
         "runs": total_runs,
         "followed": followed_count,
         "caught_of_followed": caught_count,
         "false_alarms_on_resisted": false_alarms_count,
     }
     entries.append(new_entry)
-    entries.sort(key=lambda e: (e.get("model", ""), e.get("variant", 0)))
+    entries.sort(key=lambda e: (e.get("model", ""), str(e.get("variant", 0)), e.get("agent_config", "default")))
 
     total = {
         "runs": sum(e["runs"] for e in entries),

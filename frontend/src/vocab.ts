@@ -35,6 +35,13 @@ export const TAGS: Record<string, string> = {
   "ATLAS:AML.T0110": "AI Agent Tool Poisoning — a tool's definition altered to steer the agent.",
 };
 
+/** How the live agent was set up for a recording (run_live.py --agent-config). */
+export const agentConfigLabel = (cfg: string) =>
+  ({
+    "follows-supplier-instructions": "agent configured to follow supplier instructions",
+    default: "default agent configuration",
+  })[cfg] ?? `agent configuration: ${cfg}`;
+
 export const CLAUSES: Record<string, string> = {
   allowed_tools: "Allowed tools",
   allowed_data_classes: "Allowed data classes",

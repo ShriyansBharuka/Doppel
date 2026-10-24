@@ -6,6 +6,7 @@ import {
   ApiError,
   stolenBytes,
   type DoppelEvent,
+  type Meta,
   type ScenarioResult,
   type ScenarioStep,
   type StreamMessage,
@@ -16,6 +17,7 @@ import { Button, Label } from "../components/ui";
 import { AgentTerminal, type PairedStep } from "../components/twoviews/AgentTerminal";
 import { DefenderPanel } from "../components/twoviews/DefenderPanel";
 import { FinalBanner } from "../components/twoviews/FinalBanner";
+import { agentConfigLabel } from "../vocab";
 
 const STEP_DELAY_MS = 700; // backend pacing; the player below sets the on-screen pace
 const STEP_MS = 1600; // on-screen time per step at 1×
@@ -30,20 +32,35 @@ const ViewTitle = ({ title, plain }: { title: string; plain: string }) => (
   </div>
 );
 
-/** For runs loaded after the fact: match each step to the event record_step read (same agent, tool, risk, decision). */
+/** The event's target (path, host, vendor…) must come from this step's own arguments. */
+const sameTarget = (e: DoppelEvent, step: ScenarioStep) =>
+  !e.target ||
+  Object.values(step.args).some((v) => typeof v === "string" && v !== "" && (v.includes(e.target!) || e.target!.includes(v)));
+
+/** For runs loaded after the fact: match each step to the event record_step read (same agent, tool, target, risk,
+ * decision). All or nothing: if any step has no match, the store holds a different run, and a lookalike event from
+ * that run (same tool, file and risk) must not be shown as this run's evidence — the witnesses stay dark instead.
+ * ponytail: heuristic until record_step puts event_id in defender_view; then the event_id branch is exact. */
 function pairFromEvents(steps: ScenarioStep[], events: DoppelEvent[]): PairedStep[] {
   let from = 0;
-  return steps.map((step) => {
+  const paired: PairedStep[] = steps.map((step) => {
     const dv = step.defender_view;
     const i = dv.event_id
       ? events.findIndex((e) => e.event_id === dv.event_id)
       : events.findIndex(
-          (e, j) => j >= from && e.agent_id === step.agent_id && e.tool === step.tool && e.risk === dv.risk && e.decision === dv.decision,
+          (e, j) =>
+            j >= from &&
+            e.agent_id === step.agent_id &&
+            e.tool === step.tool &&
+            e.risk === dv.risk &&
+            e.decision === dv.decision &&
+            sameTarget(e, step),
         );
     if (i < 0) return { step };
     from = i + 1;
     return { step, event: events[i] };
   });
+  return paired.every((p) => p.event) ? paired : steps.map((step) => ({ step }));
 }
 
 export default function TwoViews() {
@@ -71,7 +88,7 @@ export default function TwoViews() {
   const finish = useCallback((r: ScenarioResult) => {
     live.current = null;
     setResult(r);
-    // S4/S6 currently return no steps in the result; keep what streamed in.
+    // Streamed steps already carry their paired gateway events; only a page that joined late needs the result's.
     setSteps((s) => (s.length ? s : r.steps.map((step) => ({ step }))));
     setStatus("done");
     Promise.all([api.worldState(), allowedHosts()]).then(
@@ -137,11 +154,12 @@ export default function TwoViews() {
     };
   }, [runId, scenarioId, finish]);
 
-  // S1L replays whichever recording is on file; if the model resisted, say so instead of staging a catch.
-  const [resisted, setResisted] = useState(false);
+  // S1L replays whichever recording is on file; say how the agent was set up, and if it resisted, say that too.
+  const [recording, setRecording] = useState<Meta["live_recording"]>(null);
   useEffect(() => {
-    if (scenarioId === "s1l") api.meta().then((m) => setResisted(m.live_recording?.followed_injection === "False"), () => {});
+    if (scenarioId === "s1l") api.meta().then((m) => setRecording(m.live_recording), () => {});
   }, [scenarioId]);
+  const resisted = recording?.followed_injection === "False";
 
   // The player: one cursor drives both halves.
   useEffect(() => {
@@ -185,10 +203,10 @@ export default function TwoViews() {
             two views · {scenarioId ? scenarioId.toUpperCase() : "run"} · {runId === "new" ? "starting" : runId}
           </Label>
           <h1 className="font-display text-[28px] leading-tight font-semibold">{name}</h1>
-          {resisted && (
-            <p className="text-[15px] text-amber italic">
-              This recording is a real Gemini run in which the model ignored the hidden instruction.
-            </p>
+          {recording && (
+            <span className="mt-1 inline-block rounded-[2px] border border-amber/70 px-2 py-0.5 font-mono text-[12px] text-amber">
+              {recording.model} · {agentConfigLabel(recording.agent_config)}
+            </span>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
@@ -231,7 +249,14 @@ export default function TwoViews() {
       ) : (
         <main className="grid flex-1 grid-cols-1 gap-6 px-6 py-4 lg:min-h-0 lg:grid-cols-2">
           <section className="flex min-h-[420px] flex-col lg:min-h-0">
-            <ViewTitle title="What the agent sees" plain="Its own terminal. Every call goes through; every reply looks like success." />
+            <ViewTitle
+              title="What the agent sees"
+              plain={
+                recording
+                  ? `A real Gemini run, replayed. The model ${resisted ? "ignored" : "followed"} the hidden instruction.`
+                  : "Its own terminal. Every call goes through; every reply looks like success."
+              }
+            />
             <div className="min-h-0 flex-1">
               <AgentTerminal steps={steps} cursor={cursor} />
             </div>

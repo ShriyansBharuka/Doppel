@@ -51,6 +51,7 @@ class ScenarioResult(BaseModel):
 # Global storage for background runs and S5 day series
 _scenario_runs: dict[str, ScenarioResult] = {}
 _latest_s5_series: list[dict[str, Any]] = []
+_latest_s5_meta: dict[str, float] = {"h": 0.0, "ewma_threshold": 0.0}
 
 
 def get_scenario_run(run_id: str) -> Optional[ScenarioResult]:
@@ -68,10 +69,24 @@ def get_latest_s5_series() -> list[dict[str, Any]]:
     return list(_latest_s5_series)
 
 
-def set_latest_s5_series(series: list[dict[str, Any]]) -> None:
-    """Save latest S5 drift simulation day series."""
-    global _latest_s5_series
+def get_latest_s5_data() -> dict[str, Any]:
+    """Retrieve the latest S5 drift simulation data with top-level h, ewma_threshold, and series."""
+    return {
+        "h": _latest_s5_meta.get("h", 0.0),
+        "ewma_threshold": _latest_s5_meta.get("ewma_threshold", 0.0),
+        "series": list(_latest_s5_series),
+    }
+
+
+def set_latest_s5_series(
+    series: list[dict[str, Any]],
+    h: float = 0.0,
+    ewma_threshold: float = 0.0,
+) -> None:
+    """Save latest S5 drift simulation day series and top-level thresholds."""
+    global _latest_s5_series, _latest_s5_meta
     _latest_s5_series = list(series)
+    _latest_s5_meta = {"h": h, "ewma_threshold": ewma_threshold}
 
 
 def reset_scenario_state(seed: Optional[int] = None) -> None:
@@ -149,6 +164,7 @@ def record_step(
             sinkhole_capture_id = captures[-1].capture_id
 
     defender_view = {
+        "event_id": latest_event.event_id if latest_event else None,
         "decision": decision_str,
         "risk": event_risk,
         "session_risk": session.risk if session else event_risk,

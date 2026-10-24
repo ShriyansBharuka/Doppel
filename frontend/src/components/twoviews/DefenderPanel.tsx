@@ -72,7 +72,7 @@ function TierLadder({ tier }: { tier: Tier }) {
           return (
             <li
               key={r.tier}
-              className={`flex items-baseline gap-3 rounded-[2px] border px-3 py-1.5 transition-all duration-700 2xl:py-2.5 ${
+              className={`flex items-baseline gap-3 rounded-[2px] border px-3 py-1 transition-all duration-700 2xl:py-2.5 ${
                 current ? "border-current" : lit ? "border-line-hi" : "border-line opacity-45"
               } ${current && r.tier === "ISOLATE" ? "pulse-isolate" : ""}`}
               style={{ color: lit ? TIER_COLOR[r.tier] : undefined, background: current ? "rgba(0,0,0,0.35)" : undefined }}
@@ -140,7 +140,7 @@ export function DefenderPanel({ current }: { current: PairedStep | undefined }) 
   return (
     <div className="grid h-full grid-cols-[64px_minmax(0,1fr)] gap-4 rounded-[3px] border border-line bg-desk/80 p-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:gap-6 sm:p-5 2xl:grid-cols-[120px_minmax(0,1fr)] 2xl:p-7">
       <RiskMeter risk={risk} tier={tier} />
-      <div className="scroll-quiet flex min-h-0 flex-col gap-4 overflow-x-hidden overflow-y-auto 2xl:gap-6">
+      <div className="scroll-quiet flex min-h-0 flex-col gap-3 overflow-x-hidden overflow-y-auto 2xl:gap-6">
         <TierLadder tier={tier} />
         <Witnesses scores={scores} />
         <div className="border-t border-line pt-3">
@@ -154,7 +154,7 @@ export function DefenderPanel({ current }: { current: PairedStep | undefined }) 
                   </p>
                   <p className="mt-2 text-[17px] leading-snug text-bone 2xl:mt-3 2xl:text-[22px]">
                     {(current?.event && topEvidence(current.event)) ??
-                      maskWatermarks(dv?.top_evidence[0] ?? "No witness objected.")}
+                      maskWatermarks(dv?.top_evidence[0] ?? "No witness gave evidence against this call.")}
                   </p>
                 </>
               ) : (

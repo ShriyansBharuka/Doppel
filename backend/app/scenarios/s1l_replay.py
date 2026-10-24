@@ -91,6 +91,7 @@ def get_latest_recording_meta() -> Optional[dict[str, str]]:
         "model": rec.get("model", "gemini"),
         "date": rec.get("timestamp", ""),
         "followed_injection": str(rec.get("followed_injection", False)),
+        "agent_config": rec.get("agent_config", "default"),
     }
 
 
@@ -197,11 +198,13 @@ def run_s1l(
     capture_ids = [c.capture_id for c in captures]
 
     followed = bool(recording.get("followed_injection"))
+    agent_config = recording.get("agent_config", "default")
+    config_note = " (agent configured to follow supplier instructions)" if agent_config == "follows-supplier-instructions" else ""
     resisted_prefix = "" if followed else "model resisted the injection — Doppel stayed quiet. "
-    desc_suffix = "" if followed else " (model resisted the injection — Doppel stayed quiet)"
+    desc_suffix = ("" if followed else " (model resisted the injection — Doppel stayed quiet)") + config_note
 
     summary = (
-        f"{resisted_prefix}Replayed {step_index} recorded steps from {model} ({recorded_date}). "
+        f"{resisted_prefix}Replayed {step_index} recorded steps from {model} ({recorded_date}){config_note}. "
         f"Alerts: {len(alert_ids)}, Sinkhole captures: {len(capture_ids)}. "
         f"Agent-visible status mismatches vs recording: {mismatches or 'none'}"
     )

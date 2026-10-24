@@ -168,8 +168,9 @@ def test_scenario_api_endpoints():
         # GET /v1/scenarios/s5/series
         run_s5(reset=True, step_delay_ms=0)
         r_series = client.get("/v1/scenarios/s5/series")
-        assert r_series.status_code == 200
-        assert len(r_series.json()) == 30
+        data_series = r_series.json()
+        assert "h" in data_series and "ewma_threshold" in data_series
+        assert len(data_series["series"]) == 30
 
 
 def test_websocket_stream_s1():
@@ -211,6 +212,19 @@ def test_evaluation_harness_output_structure():
     assert results["environment"] == "measured on the Doppel simulator"
     assert "benign" in results
     assert results["benign"]["total_benign_sessions"] == 9
+    assert "by_tier" in results["benign"]
+    assert "WATCH" in results["benign"]["by_tier"]
+    assert "by_tier_per_100" in results["benign"]
+    assert "held_actions" in results["benign"]
+    assert "pct_of_all_calls" in results["benign"]["held_actions"]
+    assert "unperturbed" in results["benign"]
+    assert "perturbed" in results["benign"]
+    assert "learning_curve" in results["benign"]
+    assert "first_half_fa_per_100" in results["benign"]["learning_curve"]
+    assert "blocks_of_25" in results["benign"]["learning_curve"]
+    assert "trigger_analysis" in results["benign"]
+    assert len(results["benign"]["trigger_analysis"]) > 10
+
     assert "attacks" in results
     assert results["attacks"]["overall_variants_tested"] == 6
     assert results["attacks"]["overall_detection_rate_pct"] == 100.0
@@ -221,6 +235,7 @@ def test_evaluation_harness_output_structure():
     table = format_markdown_table(results)
     assert "Doppel Security Gateway — Benchmark Results" in table
     assert "measured on the Doppel simulator" in table
+    assert "Benign Evaluation & False Alarm Breakdown" in table
 
 
 def test_meta_endpoint():
@@ -234,6 +249,32 @@ def test_meta_endpoint():
         assert "s1" in data["scenarios_available"]
         assert "s6" in data["scenarios_available"]
         assert "live_recording" in data
+
+
+def test_meta_live_campaign_when_campaign_json_exists():
+    """Prompt 4f Task 1: when campaign.json exists, /v1/meta returns live_campaign (not null)."""
+    from app.scenarios.s1l_replay import RECORDINGS_DIR
+
+    campaign_file = RECORDINGS_DIR / "campaign.json"
+    assert campaign_file.exists(), "campaign.json must exist in recordings"
+    with TestClient(app) as client:
+        r = client.get("/v1/meta")
+        assert r.status_code == 200
+        data = r.json()
+        assert data.get("live_campaign") is not None
+        assert "entries" in data["live_campaign"] or "total" in data["live_campaign"]
+
+
+def test_scenario_step_defender_view_has_event_id():
+    """Prompt 4f Task 2: record_step puts the gateway event_id in each step's defender_view."""
+    from app.scenarios.s1_pdf_hijack import run_s1
+
+    res = run_s1(reset=True, step_delay_ms=0)
+    assert len(res.steps) > 0
+    for step in res.steps:
+        assert "event_id" in step.defender_view
+        assert step.defender_view["event_id"] is not None
+        assert isinstance(step.defender_view["event_id"], str) and len(step.defender_view["event_id"]) == 12
 
 
 def test_recordings_never_contain_a_sigil_value():

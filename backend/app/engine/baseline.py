@@ -251,11 +251,11 @@ def get_baseline() -> BaselineEngine:
     return _global_baseline
 
 
-def init_baseline(seed: int = 42) -> None:
-    """Initialize baseline with 30 synthetic benign sessions per agent."""
+def init_baseline(seed: int = 42, n_sessions: int = 60) -> None:
+    """Initialize baseline with synthetic benign sessions per agent (default 60)."""
     _global_baseline.reset()
     agents = ["procurement-agent", "email-triage-agent", "finance-agent"]
     for agent_id in agents:
-        sessions = generate_benign_sessions(agent_id, n=30, seed=seed)
+        sessions = generate_benign_sessions(agent_id, n=n_sessions, seed=seed)
         _global_baseline.train_sessions(agent_id, sessions, set_anchor=True)
-    logger.info("Initialized baseline with 30 sessions per agent (seed=%d)", seed)
+    logger.info("Initialized baseline with %d sessions per agent (seed=%d)", n_sessions, seed)

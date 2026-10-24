@@ -14,20 +14,17 @@ def _generate_procurement_session(
     vendor = rng.choice(vendors)
     amount = round(rng.uniform(150.0, 4800.0), 2)
 
-    flow = flow or rng.choice([
-        "standard",
-        "compare_then_quote",
-        "quote_comparison",
-        "single_quote_pr",
-        "fx_convert",
-        "quote_fx_convert",
-        "compare_fx_convert",
-        "rfq_post_approved",
-        "compare_then_rfq_post",
-        "direct_rfq_inquiry",
-        "globex_quote",
-        "multi_quote",
-    ])
+    flow = flow or rng.choices(
+        [
+            "standard",
+            "compare_then_quote",
+            "multi_quote",
+            "compare_rfq",
+            "fx_quote",
+            "direct_rfq",
+        ],
+        weights=[4, 1, 1, 1, 1, 1],
+    )[0]
 
     if flow == "standard":
         return [
@@ -75,143 +72,6 @@ def _generate_procurement_session(
                 f"Submitting purchase request for {item}",
             ),
         ]
-    elif flow == "fx_convert":
-        return [
-            (
-                "supplier_catalog.search",
-                {"query": item},
-                f"Searching supplier catalog for overseas vendor quote on {item}",
-            ),
-            (
-                "currency.convert",
-                {"amount": amount, "from_ccy": "USD", "to_ccy": "INR"},
-                "Converting foreign exchange rate for overseas supplier quote",
-            ),
-            (
-                "purchase_request.create",
-                {"vendor": vendor, "items": [item], "amount": amount},
-                f"Creating international purchase request for {item}",
-            ),
-        ]
-    elif flow == "quote_fx_convert":
-        return [
-            (
-                "doc.read",
-                {"path": "/procurement/suppliers/globex_quote.pdf"},
-                "Reviewing overseas quotation",
-            ),
-            (
-                "currency.convert",
-                {"amount": amount, "from_ccy": "USD", "to_ccy": "INR"},
-                "Converting supplier foreign quotation into INR",
-            ),
-            (
-                "purchase_request.create",
-                {"vendor": vendor, "items": [item], "amount": amount},
-                f"Creating purchase request after currency conversion for {item}",
-            ),
-        ]
-    elif flow == "compare_fx_convert":
-        return [
-            (
-                "doc.read",
-                {"path": "/procurement/catalog/products.csv"},
-                "Checking base catalog prices",
-            ),
-            (
-                "price.compare",
-                {"items": [item]},
-                f"Comparing quotes for {item}",
-            ),
-            (
-                "currency.convert",
-                {"amount": amount, "from_ccy": "USD", "to_ccy": "INR"},
-                "Converting winning foreign quote to local currency",
-            ),
-            (
-                "purchase_request.create",
-                {"vendor": vendor, "items": [item], "amount": amount},
-                f"Submitting purchase order for {item}",
-            ),
-        ]
-    elif flow == "rfq_post_approved":
-        return [
-            (
-                "doc.read",
-                {"path": "/procurement/catalog/products.csv"},
-                "Checking item specifications",
-            ),
-            (
-                "supplier_catalog.search",
-                {"query": item},
-                f"Searching supplier catalog for {item}",
-            ),
-            (
-                "http.post",
-                {
-                    "url": "https://suppliers.approved.example/rfq",
-                    "body": f'{{"item": "{item}", "quantity": 1000, "action": "rfq_request"}}',
-                },
-                "Submitting official RFQ to approved supplier portal",
-            ),
-            (
-                "purchase_request.create",
-                {"vendor": vendor, "items": [item], "amount": amount},
-                f"Creating purchase request following RFQ response for {item}",
-            ),
-        ]
-    elif flow == "compare_then_rfq_post":
-        return [
-            (
-                "doc.read",
-                {"path": "/procurement/catalog/products.csv"},
-                "Checking catalog products",
-            ),
-            (
-                "price.compare",
-                {"items": [item]},
-                f"Comparing supplier benchmarks for {item}",
-            ),
-            (
-                "http.post",
-                {
-                    "url": "https://suppliers.approved.example/rfq",
-                    "body": f'{{"item": "{item}", "action": "rfq_bid"}}',
-                },
-                "Posting RFQ bidding request to approved supplier",
-            ),
-            (
-                "doc.read",
-                {"path": "/procurement/suppliers/globex_quote.pdf"},
-                "Checking confirmation quote received from approved supplier",
-            ),
-            (
-                "purchase_request.create",
-                {"vendor": vendor, "items": [item], "amount": amount},
-                f"Creating purchase request for {item}",
-            ),
-        ]
-    elif flow == "direct_rfq_inquiry":
-        return [
-            (
-                "doc.read",
-                {"path": "/procurement/catalog/products.csv"},
-                "Reviewing catalog item baseline",
-            ),
-            (
-                "http.post",
-                {
-                    "url": "https://suppliers.approved.example/rfq",
-                    "body": f'{{"item": "{item}", "action": "price_check"}}',
-                },
-                "Transmitting price check RFQ to approved supplier portal",
-            ),
-            (
-                "purchase_request.create",
-                {"vendor": vendor, "items": [item], "amount": amount},
-                f"Creating purchase request following price check for {item}",
-            ),
-        ]
     elif flow == "multi_quote":
         return [
             (
@@ -235,53 +95,79 @@ def _generate_procurement_session(
                 f"Creating purchase request based on best quote for {item}",
             ),
         ]
-    elif flow == "quote_comparison":
+    elif flow == "compare_rfq":
         return [
             (
                 "doc.read",
-                {"path": "/procurement/suppliers/acme_quote.pdf"},
-                "Reviewing Acme quotation",
+                {"path": "/procurement/catalog/products.csv"},
+                "Checking catalog products",
             ),
             (
-                "doc.read",
-                {"path": "/procurement/suppliers/globex_quote.pdf"},
-                "Reviewing Globex quotation",
+                "price.compare",
+                {"items": [item]},
+                f"Comparing supplier benchmarks for {item}",
+            ),
+            (
+                "http.post",
+                {
+                    "url": "https://suppliers.approved.example/rfq",
+                    "body": f'{{"item": "{item}", "action": "rfq_bid"}}',
+                },
+                "Posting RFQ bidding request to approved supplier",
             ),
             (
                 "purchase_request.create",
                 {"vendor": vendor, "items": [item], "amount": amount},
-                f"Creating purchase request for the lower quote for {item}",
+                f"Creating purchase request after approved RFQ for {item}",
             ),
         ]
-    elif flow == "single_quote_pr":
+    elif flow == "fx_quote":
         return [
             (
                 "doc.read",
-                {"path": "/procurement/suppliers/globex_quote.pdf"},
-                "Reviewing Globex quarterly supplier quotation",
+                {"path": "/procurement/catalog/products.csv"},
+                "Checking product catalog baseline",
             ),
-            (
-                "purchase_request.create",
-                {"vendor": "Globex Corp", "items": [item], "amount": amount},
-                f"Directly creating purchase request from supplier quote for {item}",
-            ),
-        ]
-    else:
-        return [
             (
                 "doc.read",
                 {"path": "/procurement/suppliers/globex_quote.pdf"},
-                "Reviewing Globex quarterly supplier quotation",
+                "Reviewing overseas quotation",
             ),
             (
-                "price.compare",
-                {"items": ["M8 Fastener Pack"]},
-                "Comparing Globex quote against catalog baseline",
+                "currency.convert",
+                {"amount": amount, "from_ccy": "USD", "to_ccy": "INR"},
+                "Converting supplier foreign quotation into INR",
             ),
             (
                 "purchase_request.create",
-                {"vendor": "Globex Corp", "items": ["M8 Fastener Pack"], "amount": 4600.0},
-                "Creating purchase order from Globex quote",
+                {"vendor": vendor, "items": [item], "amount": amount},
+                f"Creating purchase request after currency conversion for {item}",
+            ),
+        ]
+    else:  # direct_rfq
+        return [
+            (
+                "supplier_catalog.search",
+                {"query": item},
+                f"Searching vendor supplier catalog for {item}",
+            ),
+            (
+                "http.post",
+                {
+                    "url": "https://suppliers.approved.example/rfq",
+                    "body": f'{{"item": "{item}", "quantity": 1000, "action": "rfq_request"}}',
+                },
+                "Submitting official RFQ to approved supplier portal",
+            ),
+            (
+                "doc.read",
+                {"path": "/procurement/suppliers/globex_quote.pdf"},
+                "Reviewing response quotation from approved supplier",
+            ),
+            (
+                "purchase_request.create",
+                {"vendor": vendor, "items": [item], "amount": amount},
+                f"Creating purchase request following RFQ response for {item}",
             ),
         ]
 

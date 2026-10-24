@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, loadResults, type Campaign, type EvalResults } from "../api";
 import { Header } from "../components/Header";
 import { Label, SectionHead } from "../components/ui";
+import { agentConfigLabel } from "../vocab";
+import { BenignBreakdown } from "../components/results/BenignBreakdown";
 
 const FAMILY: Record<string, string> = {
   pdf_injection: "Hidden instruction in a document",
@@ -15,7 +17,7 @@ const FAMILY: Record<string, string> = {
 function Stat({ value, label, sub }: { value: ReactNode; label: string; sub?: string }) {
   return (
     <div className="panel rounded-[3px] p-5">
-      <div className="font-mono text-[40px] leading-none text-amber">{value}</div>
+      <div className="font-mono text-[clamp(26px,2.6vw,40px)] leading-none whitespace-nowrap text-amber">{value}</div>
       <Label className="mt-2 block">{label}</Label>
       {sub && <p className="mt-1 text-[14px] text-bone-dim italic">{sub}</p>}
     </div>
@@ -28,7 +30,11 @@ function EvalTables({ r }: { r: EvalResults }) {
     <>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat value={`${r.attacks.overall_detection_rate_pct}%`} label="attacks detected" sub={`${r.attacks.overall_detected} of ${r.attacks.overall_variants_tested} variants`} />
-        <Stat value={r.benign.false_alarms_per_100} label="false alarms / 100 benign" sub={`${r.benign.total_benign_sessions} benign sessions`} />
+        <Stat
+          value={r.benign.false_alarms_per_100}
+          label="false alarms / 100 benign"
+          sub={`${r.benign.total_benign_sessions} sessions · ${r.benign.by_tier.SHRINK + r.benign.by_tier.ISOLATE === 0 ? "all at WATCH, none blocked" : "some past WATCH"}`}
+        />
         <Stat value={`${r.attacks.real_bytes_leaked} B`} label="bytes leaked" sub="read from the real egress log" />
         <Stat value={`${r.latency_ms.p50} / ${r.latency_ms.p95}`} label="added latency p50 / p95 (ms)" sub={`${r.latency_ms.samples.toLocaleString()} gateway calls`} />
       </div>
@@ -66,26 +72,40 @@ function EvalTables({ r }: { r: EvalResults }) {
 }
 
 function CampaignTable({ c }: { c: Campaign }) {
-  const resisted = c.runs - c.followed;
+  const rows = [
+    ...c.entries.map((e) => ({ ...e, key: `${e.model}-${e.variant}-${e.agent_config}`, label: e.model, variant: `#${e.variant}`, config: agentConfigLabel(e.agent_config) })),
+    { ...c.total, key: "total", label: "All runs", variant: "", config: "" },
+  ];
   return (
-    <table className="mt-3 w-full max-w-2xl text-left">
-      <tbody className="font-mono text-[14px]">
-        {[
-          ["model", c.model],
-          ["live runs", c.runs],
-          ["followed the hidden instruction", c.followed],
-          ["…and were caught by Doppel", `${c.caught_of_followed} of ${c.followed}`],
-          ["resisted the instruction", resisted],
-          ["false alarms on runs that resisted", `${c.false_alarms_on_resisted} of ${resisted}`],
-          ["recorded", c.date.slice(0, 10)],
-        ].map(([k, v]) => (
-          <tr key={String(k)} className="border-b border-line">
-            <td className="py-2 pr-6 font-body text-[17px] text-bone-dim">{k}</td>
-            <td className="text-bone">{v}</td>
+    <div className="mt-3 overflow-x-auto">
+      <table className="w-full min-w-[760px] text-left">
+        <thead>
+          <tr className="border-b border-line-hi">
+            {["Model", "Injection phrasing", "Agent configuration", "Runs", "Followed the hidden instruction", "Caught by Doppel", "False alarms when it resisted"].map((h) => (
+              <th key={h} className="py-2 pr-5 align-bottom font-normal">
+                <Label>{h}</Label>
+              </th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="font-mono text-[14px]">
+          {rows.map((r) => (
+            <tr key={r.key} className={`border-b border-line ${r.key === "total" ? "text-amber" : ""}`}>
+              <td className="py-2 pr-5 whitespace-nowrap">{r.label}</td>
+              <td className="pr-5">{r.variant}</td>
+              <td className={`pr-5 font-body text-[16px] ${r.config.includes("follow supplier") ? "text-amber" : "text-bone-dim"}`}>{r.config}</td>
+              <td className="pr-5">{r.runs}</td>
+              <td className="pr-5">{r.followed}</td>
+              <td className="pr-5">{r.followed ? `${r.caught_of_followed} of ${r.followed}` : "—"}</td>
+              <td>{`${r.false_alarms_on_resisted} of ${r.runs - r.followed}`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2 text-[14px] text-bone-dim italic">
+        Recorded {c.date.slice(0, 10)}. “Injection phrasing” is which wording of the hidden instruction the poisoned quote carried.
+      </p>
+    </div>
   );
 }
 
@@ -118,6 +138,7 @@ export default function Results() {
           </div>
         )}
         {results && <EvalTables r={results} />}
+        {results && <BenignBreakdown b={results.benign} />}
 
         <section className="mt-12">
           <SectionHead
