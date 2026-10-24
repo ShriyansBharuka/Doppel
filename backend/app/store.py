@@ -1,6 +1,6 @@
 """Storage interface and in-memory implementation."""
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 from app.config import get_settings
 from app.models import (
     Alert,
@@ -60,6 +60,14 @@ class Store(Protocol):
     def get_pinned_tool_hash(self, tool_name: str) -> Optional[str]: ...
     def get_all_pinned_tool_hashes(self) -> dict[str, str]: ...
 
+    # Delegations
+    def queue_delegation(self, msg: dict[str, Any]) -> None: ...
+    def get_delegations(self, target_agent: Optional[str] = None) -> list[dict[str, Any]]: ...
+
+    # Egress logs
+    def record_egress(self, entry: dict[str, Any]) -> None: ...
+    def get_egress_logs(self) -> list[dict[str, Any]]: ...
+
     # Reset
     def reset(self) -> None: ...
 
@@ -77,6 +85,8 @@ class InMemoryStore:
         self._revoked_jtis: set[str] = set()
         self._disabled_tools: set[str] = set()
         self._pinned_tool_hashes: dict[str, str] = {}
+        self._delegations: list[dict[str, Any]] = []
+        self._egress_logs: list[dict[str, Any]] = []
 
     # Contracts
     def save_contract(self, contract: Contract) -> None:
@@ -171,6 +181,22 @@ class InMemoryStore:
     def get_all_pinned_tool_hashes(self) -> dict[str, str]:
         return dict(self._pinned_tool_hashes)
 
+    # Delegations
+    def queue_delegation(self, msg: dict[str, Any]) -> None:
+        self._delegations.append(msg)
+
+    def get_delegations(self, target_agent: Optional[str] = None) -> list[dict[str, Any]]:
+        if target_agent:
+            return [d for d in self._delegations if d.get("to_agent") == target_agent]
+        return list(self._delegations)
+
+    # Egress logs
+    def record_egress(self, entry: dict[str, Any]) -> None:
+        self._egress_logs.append(entry)
+
+    def get_egress_logs(self) -> list[dict[str, Any]]:
+        return list(self._egress_logs)
+
     # Reset
     def reset(self) -> None:
         """Reset all in-memory collections to empty states."""
@@ -183,6 +209,8 @@ class InMemoryStore:
         self._revoked_jtis.clear()
         self._disabled_tools.clear()
         self._pinned_tool_hashes.clear()
+        self._delegations.clear()
+        self._egress_logs.clear()
 
 
 _global_in_memory_store = InMemoryStore()

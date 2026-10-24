@@ -182,6 +182,12 @@ def get_tools_registry() -> dict[str, ToolSpec]:
     return _tools_registry
 
 
+def init_tools() -> None:
+    """Rebuild the registry from definitions, discarding runtime mutations (e.g. the S2 rug pull)."""
+    global _tools_registry
+    _tools_registry = build_tools_registry()
+
+
 def get_tool(name: str) -> Optional[ToolSpec]:
     """Retrieve ToolSpec by name."""
     return get_tools_registry().get(name)

@@ -1,16 +1,14 @@
 """Tests for FastAPI endpoints using TestClient."""
 
 from fastapi.testclient import TestClient
-import pytest
 
-from app.contracts.sign import sign_all_contracts
+from app.contracts.loader import load_contracts
 from app.main import app
 
 
-@pytest.fixture(autouse=True)
-def ensure_signed_contracts():
-    """Ensure all role contracts in app/contracts are signed before testing API."""
-    sign_all_contracts()
+def test_shipped_contracts_verify_without_resigning():
+    """The committed contract files must verify as-is (tests must never re-sign them)."""
+    assert set(load_contracts()) == {"procurement-agent", "email-triage-agent", "finance-agent"}
 
 
 def test_health_endpoint():

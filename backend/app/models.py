@@ -16,6 +16,26 @@ class Sensitivity(str, Enum):
     restricted = "restricted"
 
 
+DATA_CLASS_SENSITIVITY: dict[str, Sensitivity] = {
+    "product_catalog": Sensitivity.public,
+    "supplier_data": Sensitivity.internal,
+    "purchase_requests": Sensitivity.internal,
+    "email": Sensitivity.internal,
+    "hr_directory": Sensitivity.confidential,
+    "hr_salary": Sensitivity.restricted,
+    "vendor_bank": Sensitivity.restricted,
+    "payments": Sensitivity.restricted,
+    "secrets": Sensitivity.restricted,
+}
+
+ASSET_MULTIPLIERS: dict[Sensitivity, float] = {
+    Sensitivity.public: 0.8,
+    Sensitivity.internal: 1.0,
+    Sensitivity.confidential: 1.2,
+    Sensitivity.restricted: 1.2,
+}
+
+
 class Trust(str, Enum):
     """Data trust origin (SPEC §4.4)."""
     trusted = "trusted"
@@ -118,13 +138,23 @@ class Event(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
     purpose: str = ""
     timestamp: datetime
+    action_type: Optional[str] = None
+    target: Optional[str] = None
+    data_class: Optional[str] = None
+    sensitivity: Optional[Sensitivity] = None
+    bytes_out: int = 0
+    sigil_status: str = "valid"
     sigil_present: bool = False
     runtime_fingerprint: Optional[str] = None
+    token_jti: Optional[str] = None
+    taint_labels_snapshot: list[TaintLabel] = Field(default_factory=list)
+    taint_refs_snapshot: list[TaintRef] = Field(default_factory=list)
     decision: Decision = Decision.allow
     risk: int = Field(default=0, ge=0, le=100)
     tier: Tier = Tier.ALLOW
     detector_results: list[DetectorResult] = Field(default_factory=list)
     result: Optional[Any] = None
+    latency_ms: float = 0.0
 
 
 class Contribution(BaseModel):
@@ -168,8 +198,11 @@ class SessionState(BaseModel):
     token: str = ""
     sigil: str = ""
     contract_version: int = 1
+    original_fingerprint: str = ""
     runtime_fingerprint: str = ""
+    current_jti: str = ""
     parent_session_id: Optional[str] = None
+    inherited_risk_floor: int = Field(default=0, ge=0, le=100)  # 0.7 × parent risk at delegation (SPEC §7)
     taint_labels: list[TaintLabel] = Field(default_factory=list)
     taint_refs: list[TaintRef] = Field(default_factory=list)
     risk: int = Field(default=0, ge=0, le=100)
@@ -178,6 +211,7 @@ class SessionState(BaseModel):
     act: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    recent_call_timestamps: list[datetime] = Field(default_factory=list)
 
 
 class SinkholeCapture(BaseModel):
